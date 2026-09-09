@@ -1,0 +1,19 @@
+{
+  "name": "paw-dl",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^7"
+  },
+  "dependencies": {
+    "commander": "^15.0.0",
+    "p-limit": "^7.3.2",
+    "p-retry": "^8.0.1",
+    "sanitize-filename": "^1.6.4",
+    "zod": "^4.5.4"
+  }
+}
