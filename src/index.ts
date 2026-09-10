@@ -4,7 +4,27 @@ import { createQueue } from './downloader/queue.ts';
 import { downloadPost } from './downloader/download-post.ts';
 import { acquireLock, releaseLock } from './lock.ts';
 import { getBanner } from './banner.ts';
+import { DEFAULT_CONCURRENCY, errorMessage } from './utils/http.ts';
 import type { Target } from './utils/parse-url.ts';
+
+const EXIT_SIGINT = 130;
+const EXIT_SIGTERM = 143;
+
+type Totals = {
+  posts: number;
+  saved: number;
+  skipped: number;
+  failedFiles: number;
+  failedPosts: number;
+};
+
+type DownloadAllOptions = {
+  target: Target;
+  creatorName: string;
+  output: string;
+  postCount: number | undefined;
+  includeFiles: string[];
+};
 
 function targetToString(target: Target): string {
   const base = `https://pawchive.pw/${target.service}/user/${target.userId}`;
@@ -16,7 +36,7 @@ async function release(output: string): Promise<void> {
   try {
     await releaseLock(output);
   } catch {
-    // just ignore this
+    // Lock release is best-effort; ignore failures.
   }
 }
 
@@ -26,65 +46,59 @@ function releaseAndExit(output: string, code: number): void {
   });
 }
 
-async function main(): Promise<void> {
-  console.log(getBanner());
-  console.log();
-
-  const options = parseCli();
-
-  if (!options) {
-    console.log(HELP);
-    return;
-  }
-
-  const { target, output, iterations, includeFiles, force } = options;
-
-  const targetUrl = targetToString(target);
-
-  try {
-    await acquireLock(output, targetUrl, force);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-
-    console.error(message);
-    process.exitCode = 1;
-    return;
-  }
-
+function setupSignalHandlers(output: string): () => Promise<void> {
   let released = false;
 
-  async function releaseOnce(): Promise<void> {
+  const releaseOnce = async (): Promise<void> => {
     if (released) {
       return;
     }
 
     released = true;
     await release(output);
-  }
+  };
 
   process.on('beforeExit', () => {
     releaseOnce();
   });
-  process.on('SIGINT', () => releaseAndExit(output, 130));
-  process.on('SIGTERM', () => releaseAndExit(output, 143));
+  process.on('SIGINT', () => releaseAndExit(output, EXIT_SIGINT));
+  process.on('SIGTERM', () => releaseAndExit(output, EXIT_SIGTERM));
   process.on('uncaughtException', (error) => {
     console.error(error);
     releaseAndExit(output, 1);
   });
 
-  const creator = await getCreator(target);
-  const queue = createQueue(3);
+  return releaseOnce;
+}
 
-  const totals = {
+function createTotals(): Totals {
+  return {
     posts: 0,
     saved: 0,
     skipped: 0,
     failedFiles: 0,
     failedPosts: 0,
   };
+}
 
-  console.log(`Creator: ${creator.name}`);
-  console.log(`Output: ${output}`);
+function printSummary(totals: Totals, listingFailed: boolean): void {
+  console.log('\nResult:');
+  console.log(`Processed post(s): ${totals.posts}`);
+  console.log(`Saved file(s): ${totals.saved}`);
+  console.log(`Skipped file(s): ${totals.skipped}`);
+  console.log(`Failed file(s): ${totals.failedFiles}`);
+  console.log(`Failed post(s): ${totals.failedPosts}`);
+
+  if (listingFailed) {
+    console.log('Listing interrupted.');
+  }
+}
+
+async function downloadAll(options: DownloadAllOptions): Promise<{ totals: Totals; listingFailed: boolean }> {
+  const { target, creatorName, output, postCount, includeFiles } = options;
+
+  const totals = createTotals();
+  const queue = createQueue(DEFAULT_CONCURRENCY);
 
   async function processPost(postId: string): Promise<void> {
     totals.posts++;
@@ -94,7 +108,7 @@ async function main(): Promise<void> {
 
       const result = await downloadPost({
         creator: target,
-        userName: creator.name,
+        userName: creatorName,
         post,
         output,
         queue,
@@ -111,51 +125,81 @@ async function main(): Promise<void> {
     } catch (error) {
       totals.failedPosts++;
 
-      const message = error instanceof Error ? error.message : String(error);
-
-      console.error(`[Post ${postId}] ${message}`);
+      console.error(`[Post ${postId}] ${errorMessage(error)}`);
     }
+  }
+
+  if (target.type === 'post') {
+    await processPost(target.postId);
+
+    return { totals, listingFailed: false };
+  }
+
+  if (postCount !== undefined) {
+    console.log(`Fetching up to ${postCount} post(s)`);
   }
 
   let listingFailed = false;
 
-  if (target.type === 'post') {
-    await processPost(target.postId);
-  } else {
-    console.log(`Maximum iterations list: ${iterations}`);
-
-    try {
-      for await (const summary of iterateCreatorPosts(target, iterations)) {
-        await processPost(summary.id);
-      }
-    } catch (error) {
-      listingFailed = true;
-
-      const message = error instanceof Error ? error.message : String(error);
-
-      console.error(`[Creator listing] ${message}`);
+  try {
+    for await (const summary of iterateCreatorPosts(target, postCount)) {
+      await processPost(summary.id);
     }
+  } catch (error) {
+    listingFailed = true;
+
+    console.error(`[Creator listing] ${errorMessage(error)}`);
   }
 
-  console.log('\nResult:');
-  console.log(`Processed post(s): ${totals.posts}`);
-  console.log(`Saved file(s): ${totals.saved}`);
-  console.log(`Skipped file(s): ${totals.skipped}`);
-  console.log(`Failed file(s): ${totals.failedFiles}`);
-  console.log(`Failed post(s): ${totals.failedPosts}`);
+  return { totals, listingFailed };
+}
 
-  if (listingFailed) {
-    console.log('Listing interrupted.');
+async function main(): Promise<void> {
+  console.log(getBanner());
+  console.log();
+
+  const options = parseCli();
+
+  if (!options) {
+    console.log(HELP);
+    return;
   }
+
+  const { target, output, postCount, includeFiles, force } = options;
+
+  try {
+    await acquireLock(output, targetToString(target), force);
+  } catch (error) {
+    console.error(errorMessage(error));
+    process.exitCode = 1;
+    return;
+  }
+
+  const releaseOnce = setupSignalHandlers(output);
+
+  const creator = await getCreator(target);
+
+  console.log(`Creator: ${creator.name}`);
+  console.log(`Output: ${output}`);
+
+  const { totals, listingFailed } = await downloadAll({
+    target,
+    creatorName: creator.name,
+    output,
+    postCount,
+    includeFiles,
+  });
+
+  printSummary(totals, listingFailed);
 
   if (totals.failedPosts > 0 || listingFailed) {
     process.exitCode = 1;
   }
+
+  await releaseOnce();
 }
 
 main().catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error);
-
-  console.error(message);
+  console.error(errorMessage(error));
   process.exitCode = 1;
 });

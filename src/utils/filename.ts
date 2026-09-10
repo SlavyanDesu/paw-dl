@@ -63,7 +63,7 @@ function getExtension(originalName: string, filePath: string): string {
 
 export function createFileName(fileStem: string, originalName: string, filePath: string, order: number): string {
   if (!Number.isSafeInteger(order) || order < 1) {
-    throw new Error('Urutan file harus berupa integer positif.');
+    throw new Error('File order must be a positive integer.');
   }
 
   const sequence = String(order).padStart(3, '0');

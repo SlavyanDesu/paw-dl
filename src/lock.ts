@@ -1,6 +1,7 @@
-import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
+import { mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+
+import { atomicWriteJson, removeIfExists } from './utils/fs.ts';
 
 const LOCK_NAME = '.paw-dl.lock';
 
@@ -43,25 +44,7 @@ async function readLock(lockPath: string): Promise<LockData | null> {
 }
 
 async function writeLock(lockPath: string, data: LockData): Promise<void> {
-  const temporaryPath = `${lockPath}.${randomUUID()}.tmp`;
-
-  const handle = await open(temporaryPath, 'wx');
-
-  try {
-    try {
-      await handle.writeFile(`${JSON.stringify(data, null, 2)}\n`, 'utf8');
-    } finally {
-      await handle.close();
-    }
-
-    await rename(temporaryPath, lockPath);
-  } finally {
-    try {
-      await unlink(temporaryPath);
-    } catch {
-      // just ignore this
-    }
-  }
+  await atomicWriteJson(lockPath, data);
 }
 
 export async function acquireLock(output: string, target: string, force = false): Promise<void> {
@@ -92,12 +75,6 @@ export async function releaseLock(output: string): Promise<void> {
   const existing = await readLock(lockPath);
 
   if (existing && existing.pid === process.pid) {
-    try {
-      await unlink(lockPath);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        throw error;
-      }
-    }
+    await removeIfExists(lockPath);
   }
 }

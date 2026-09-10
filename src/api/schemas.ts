@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-const IdSchema = z.string().refine((value) => value.trim().length > 0, 'ID tidak boleh kosong.');
+const IdSchema = z.string().refine((value) => value.trim().length > 0, 'ID must not be empty.');
 
 export const AttachmentSchema = z.object({
   name: z
@@ -13,8 +13,8 @@ export const AttachmentSchema = z.object({
 
 export type Attachment = z.infer<typeof AttachmentSchema>;
 
-// Respons API bisa menyatakan file kosong sebagai null,
-// undefined, {}, atau object dengan path kosong.
+// API response can represent an empty file as null,
+// undefined, {}, or an object with an empty path.
 const OptionalAttachmentSchema = AttachmentSchema.extend({
   path: z.string().nullish(),
 })
@@ -32,7 +32,7 @@ const OptionalAttachmentSchema = AttachmentSchema.extend({
   });
 
 export const CreatorSchema = z.object({
-  name: z.string().refine((value) => value.trim().length > 0, 'Nama kreator tidak boleh kosong.'),
+  name: z.string().refine((value) => value.trim().length > 0, 'Creator name must not be empty.'),
 });
 
 export const PostSummarySchema = z.object({

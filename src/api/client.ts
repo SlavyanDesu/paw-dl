@@ -1,44 +1,22 @@
 import { parseCreator, parsePost, parsePostList, type Creator, type Post, type PostSummary } from './schemas.ts';
 import pRetry, { AbortError } from 'p-retry';
 
+import { NETWORK_ERROR_CODES, RETRYABLE_STATUS, parseRetryAfterToTimestamp } from '../utils/http.ts';
+
 const API_BASE_URL = 'https://pawchive.pw/api/v1';
 
 const PAGE_SIZE = 50;
 const REQUEST_TIMEOUT_MS = 30_000;
-
-const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
+const MAX_RETRY_WAIT_SLEEP_MS = 60_000;
 
 class RetryableHttpError extends Error {
   readonly retryAt: number;
 
   constructor(status: number, path: string, retryAt: number) {
-    super(`API gagal: HTTP ${status} — ${path}`);
+    super(`API failed: HTTP ${status} — ${path}`);
     this.name = 'RetryableHttpError';
     this.retryAt = retryAt;
   }
-}
-
-function parseRetryAfter(value: string | null): number {
-  if (!value) {
-    return 0;
-  }
-
-  const trimmed = value.trim();
-
-  if (/^\d+$/.test(trimmed)) {
-    const milliseconds = Number(trimmed) * 1_000;
-    const retryAt = Date.now() + milliseconds;
-
-    if (!Number.isSafeInteger(retryAt)) {
-      throw new AbortError('Nilai Retry-After terlalu besar.');
-    }
-
-    return retryAt;
-  }
-
-  const timestamp = Date.parse(trimmed);
-
-  return Number.isNaN(timestamp) ? 0 : timestamp;
 }
 
 export type CreatorRef = {
@@ -75,10 +53,10 @@ async function requestJson(path: string, query: Record<string, string> = {}): Pr
         await response.body?.cancel();
 
         if (RETRYABLE_STATUS.has(response.status)) {
-          throw new RetryableHttpError(response.status, url.pathname, parseRetryAfter(retryAfter));
+          throw new RetryableHttpError(response.status, url.pathname, parseRetryAfterToTimestamp(retryAfter));
         }
 
-        throw new AbortError(`API gagal: HTTP ${response.status} — ${url.pathname}`);
+        throw new AbortError(`API failed: HTTP ${response.status} — ${url.pathname}`);
       }
 
       const contentType = response.headers.get('content-type') ?? '';
@@ -86,7 +64,7 @@ async function requestJson(path: string, query: Record<string, string> = {}): Pr
       if (!contentType.toLowerCase().includes('json')) {
         await response.body?.cancel();
 
-        throw new AbortError(`API tidak mengirim JSON — ${url.pathname}`);
+        throw new AbortError(`API did not send JSON — ${url.pathname}`);
       }
 
       try {
@@ -94,7 +72,7 @@ async function requestJson(path: string, query: Record<string, string> = {}): Pr
         return data;
       } catch (error) {
         if (error instanceof SyntaxError) {
-          throw new AbortError('API mengirim JSON yang tidak valid.');
+          throw new AbortError('API sent invalid JSON.');
         }
 
         throw error;
@@ -108,14 +86,14 @@ async function requestJson(path: string, query: Record<string, string> = {}): Pr
       randomize: true,
 
       onFailedAttempt: ({ error, attemptNumber }) => {
-        console.warn(`[API] Percobaan ${attemptNumber} gagal: ${error.message}`);
+        console.warn(`[API] Attempt ${attemptNumber} failed: ${error.message}`);
       },
 
       shouldRetry: async ({ error }) => {
         if (error instanceof RetryableHttpError) {
           while (Date.now() < error.retryAt) {
             const remaining = error.retryAt - Date.now();
-            await Bun.sleep(Math.min(remaining, 60_000));
+            await Bun.sleep(Math.min(remaining, MAX_RETRY_WAIT_SLEEP_MS));
           }
 
           return true;
@@ -125,9 +103,7 @@ async function requestJson(path: string, query: Record<string, string> = {}): Pr
         return (
           error.name === 'TimeoutError' ||
           error instanceof TypeError ||
-          ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EAI_AGAIN', 'ConnectionClosed', 'ConnectionRefused'].includes(
-            String((error as Error & { code?: string }).code ?? ''),
-          )
+          NETWORK_ERROR_CODES.has(String((error as Error & { code?: string }).code ?? ''))
         );
       },
     },
@@ -146,7 +122,7 @@ export async function getPost(creator: CreatorRef, postId: string): Promise<Post
   const post = parsePost(data);
 
   if (post.id !== postId) {
-    throw new Error('ID post pada respons berbeda dari permintaan.');
+    throw new Error('Post ID in response differs from request.');
   }
 
   return post;
@@ -154,7 +130,7 @@ export async function getPost(creator: CreatorRef, postId: string): Promise<Post
 
 export async function getPostPage(creator: CreatorRef, offset: number): Promise<PostSummary[]> {
   if (!Number.isSafeInteger(offset) || offset < 0) {
-    throw new Error('Offset harus berupa integer nonnegatif.');
+    throw new Error('Offset must be a non-negative integer.');
   }
 
   const data = await requestJson(creatorPath(creator), {
@@ -166,15 +142,17 @@ export async function getPostPage(creator: CreatorRef, offset: number): Promise<
 
 export async function* iterateCreatorPosts(
   creator: CreatorRef,
-  iterations: number,
+  postCount?: number,
 ): AsyncGenerator<PostSummary, void, unknown> {
-  if (!Number.isSafeInteger(iterations) || iterations < 1 || !Number.isSafeInteger((iterations - 1) * PAGE_SIZE)) {
-    throw new Error('Jumlah iterasi tidak valid.');
+  if (postCount !== undefined && (!Number.isSafeInteger(postCount) || postCount < 1)) {
+    throw new Error('Invalid post count.');
   }
 
   const seen = new Set<string>();
 
-  for (let page = 0; page < iterations; page++) {
+  let yielded = 0;
+
+  for (let page = 0; ; page++) {
     const offset = page * PAGE_SIZE;
     const posts = await getPostPage(creator, offset);
 
@@ -193,6 +171,12 @@ export async function* iterateCreatorPosts(
       newPosts++;
 
       yield post;
+
+      yielded++;
+
+      if (postCount !== undefined && yielded >= postCount) {
+        return;
+      }
     }
 
     if (newPosts === 0) {

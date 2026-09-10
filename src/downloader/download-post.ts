@@ -1,5 +1,4 @@
-import { lstat, mkdir, open, readFile, rename, unlink, writeFile } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
+import { lstat, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 
 import { z } from 'zod';
@@ -8,6 +7,8 @@ import type { Attachment, Post } from '../api/schemas.ts';
 import type { CreatorRef } from '../api/client.ts';
 
 import { createFileName, createPostNames, sanitizeName } from '../utils/filename.ts';
+import { atomicWriteJson } from '../utils/fs.ts';
+import { FILE_ORIGIN } from '../utils/http.ts';
 
 import { downloadFile, type FileManifestEntry } from './download-file.ts';
 
@@ -15,7 +16,7 @@ import type { createQueue } from './queue.ts';
 
 type Queue = ReturnType<typeof createQueue>;
 
-const FILE_ORIGIN = 'https://file.pawchive.pw';
+const MAX_FOLDER_COLLISION_ATTEMPTS = 100;
 
 const MEDIA_EXTENSIONS = new Set([
   // Images
@@ -139,8 +140,38 @@ function collectFiles(post: Post, includeFiles: string[]): Attachment[] {
 }
 
 /*
- * Folder post
+ * Post folder
  */
+
+async function isSamePost(directory: string, identity: string): Promise<boolean> {
+  try {
+    const info = await lstat(directory);
+
+    if (!info.isDirectory()) {
+      return false;
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return false;
+    }
+
+    throw error;
+  }
+
+  const markerPath = join(directory, '.post-id');
+
+  try {
+    const marker = await readFile(markerPath, 'utf8');
+
+    return marker === identity;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return false;
+    }
+
+    throw error;
+  }
+}
 
 async function preparePostDirectory(
   output: string,
@@ -152,12 +183,10 @@ async function preparePostDirectory(
     recursive: true,
   });
 
-  for (let attempt = 0; attempt < 100; attempt++) {
+  for (let attempt = 0; attempt < MAX_FOLDER_COLLISION_ATTEMPTS; attempt++) {
     const suffix = attempt === 0 ? '' : ` [${sanitizeName(postId)}${attempt > 1 ? `-${attempt}` : ''}]`;
 
     const directory = join(output, folderName + suffix);
-
-    const markerPath = join(directory, '.post-id');
 
     try {
       await mkdir(directory);
@@ -166,31 +195,14 @@ async function preparePostDirectory(
         throw error;
       }
 
-      const info = await lstat(directory);
-
-      if (!info.isDirectory()) {
+      if (!(await isSamePost(directory, identity))) {
         continue;
       }
 
-      try {
-        const existingIdentity = await readFile(markerPath, 'utf8');
-
-        if (existingIdentity === identity) {
-          return directory;
-        }
-      } catch (markerError) {
-        if ((markerError as NodeJS.ErrnoException).code !== 'ENOENT') {
-          throw markerError;
-        }
-      }
-
-      continue;
+      return directory;
     }
 
-    await writeFile(markerPath, identity, {
-      encoding: 'utf8',
-      flag: 'wx',
-    });
+    await writeFile(join(directory, '.post-id'), identity, { encoding: 'utf8', flag: 'wx' });
 
     return directory;
   }
@@ -201,16 +213,6 @@ async function preparePostDirectory(
 /*
  * Manifest
  */
-
-async function removeIfExists(path: string): Promise<void> {
-  try {
-    await unlink(path);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw error;
-    }
-  }
-}
 
 async function readManifest(path: string, identity: string): Promise<PostManifest> {
   let text: string;
@@ -251,25 +253,7 @@ async function readManifest(path: string, identity: string): Promise<PostManifes
 }
 
 async function writeManifest(path: string, manifest: PostManifest): Promise<void> {
-  const temporaryPath = `${path}.${randomUUID()}.tmp`;
-
-  const handle = await open(temporaryPath, 'wx');
-
-  try {
-    try {
-      await handle.writeFile(`${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
-
-      // Ask the filesystem to flush the file
-      // before publishing the manifest.
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-
-    await rename(temporaryPath, path);
-  } finally {
-    await removeIfExists(temporaryPath);
-  }
+  await atomicWriteJson(path, manifest, { sync: true });
 }
 
 /*
@@ -278,13 +262,13 @@ async function writeManifest(path: string, manifest: PostManifest): Promise<void
 
 function createSourceIdentity(file: Attachment): string {
   if (!file.path.startsWith('/') || file.path.startsWith('//') || /[\\?#]/.test(file.path)) {
-    throw new Error(`Path attachment tidak valid: ${file.path}`);
+    throw new Error(`Invalid attachment path: ${file.path}`);
   }
 
   const url = new URL(`/data${file.path}`, FILE_ORIGIN);
 
   if (url.origin !== FILE_ORIGIN || !url.pathname.startsWith('/data/')) {
-    throw new Error('URL attachment keluar dari lokasi file.');
+    throw new Error('Attachment URL escapes file location.');
   }
 
   return `${url.origin}${url.pathname}`;
@@ -345,7 +329,7 @@ function createJobs(files: Attachment[], directory: string, fileStem: string, ma
 }
 
 /*
- * Download satu post
+ * Download a single post
  */
 
 export async function downloadPost(options: DownloadPostOptions): Promise<PostDownloadResult> {
@@ -402,7 +386,11 @@ export async function downloadPost(options: DownloadPostOptions): Promise<PostDo
     }
 
     if (result.status === 'fulfilled') {
-      summary[result.value.status]++;
+      if (result.value.status === 'saved') {
+        summary.saved++;
+      } else {
+        summary.skipped++;
+      }
 
       const entry = result.value.manifest;
 

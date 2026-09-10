@@ -5,23 +5,23 @@ import { parseTarget, type Target } from './utils/parse-url.ts';
 export type CliOptions = {
   target: Target;
   output: string;
-  iterations: number;
+  postCount: number | undefined;
   includeFiles: string[];
   force: boolean;
 };
 
 type ParsedFlags = {
   output?: string | true;
-  iterations: number;
+  postCount?: number;
   includeFiles?: string[];
   force: boolean;
 };
 
-function parseIterations(value: string): number {
+function parsePostCount(value: string): number {
   const number = Number(value);
 
   if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(number)) {
-    throw new InvalidArgumentError('Iteration must be a round number.');
+    throw new InvalidArgumentError('Post count must be a whole number.');
   }
 
   return number;
@@ -47,7 +47,7 @@ function createProgram(): Command {
     .description('Pawchive downloader.')
     .argument('<url>', 'Creator or post URL')
     .option('-o, --output [folder]', 'Output folder (default: cwd)')
-    .option('-i, --iterations <number>', 'Maximum post you want to iterate', parseIterations, 1)
+    .option('-n, --post <number>', 'Number of posts to fetch (default: fetch all posts)', parsePostCount)
     .option(
       '--include-files <extensions>',
       'Include files other than images and video: zip,psd,pdf or "all"',
@@ -71,7 +71,10 @@ export function parseCli(args: string[] = Bun.argv.slice(2)): CliOptions | null 
   try {
     program.parse(args, { from: 'user' });
   } catch (error) {
-    if (error instanceof CommanderError && error.code === 'commander.helpDisplayed') {
+    if (
+      error instanceof CommanderError &&
+      (error.code === 'commander.helpDisplayed' || error.code === 'commander.missingArgument')
+    ) {
       return null;
     }
 
@@ -87,8 +90,8 @@ export function parseCli(args: string[] = Bun.argv.slice(2)): CliOptions | null 
   const target = parseTarget(input);
   const options = program.opts<ParsedFlags>();
 
-  if (target.type === 'post' && program.getOptionValueSource('iterations') === 'cli') {
-    throw new Error('--iterations only works on creator URL.');
+  if (target.type === 'post' && program.getOptionValueSource('post') === 'cli') {
+    throw new Error('--post only works on creator URL.');
   }
 
   const output = typeof options.output === 'string' && options.output.trim() ? resolve(options.output) : process.cwd();
@@ -96,7 +99,7 @@ export function parseCli(args: string[] = Bun.argv.slice(2)): CliOptions | null 
   return {
     target,
     output,
-    iterations: options.iterations,
+    postCount: options.postCount,
     includeFiles: options.includeFiles ?? [],
     force: options.force ?? false,
   };
