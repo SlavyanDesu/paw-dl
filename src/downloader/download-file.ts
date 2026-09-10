@@ -354,9 +354,10 @@ async function finalizeDownload(
     const code = (error as NodeJS.ErrnoException).code;
 
     // Some setups have no hard links: bun-termux stubs linkat() with EXDEV,
-    // and Android shared storage doesn't support them either. Same directory,
-    // so a rename is still atomic — but only when nothing is in the way.
-    if (code === 'EXDEV' || code === 'EPERM' || code === 'EOPNOTSUPP' || code === 'ENOSYS') {
+    // Android shared storage doesn't support them either, and hard links can
+    // also be denied outright (EACCES on Termux). Same directory, so a rename
+    // is still atomic — but only when nothing is in the way.
+    if (code === 'EXDEV' || code === 'EACCES' || code === 'EPERM' || code === 'EOPNOTSUPP' || code === 'ENOSYS') {
       if (await isExistingFile(destination)) {
         throw error;
       }
