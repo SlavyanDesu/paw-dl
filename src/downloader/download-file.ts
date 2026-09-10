@@ -1,4 +1,4 @@
-import { link, lstat, mkdir, readFile, unlink } from 'node:fs/promises';
+import { link, lstat, mkdir, readFile, rename } from 'node:fs/promises';
 import { basename, dirname } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -347,8 +347,25 @@ async function finalizeDownload(
   metadataPath: string,
   expectedSize: number,
 ): Promise<void> {
-  // A hard link fails if the destination exists, so we won't overwrite it.
-  await link(partialPath, destination);
+  try {
+    // A hard link fails if the destination exists, so we won't overwrite it.
+    await link(partialPath, destination);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+
+    // Some setups have no hard links: bun-termux stubs linkat() with EXDEV,
+    // and Android shared storage doesn't support them either. Same directory,
+    // so a rename is still atomic — but only when nothing is in the way.
+    if (code === 'EXDEV' || code === 'EPERM' || code === 'EOPNOTSUPP' || code === 'ENOSYS') {
+      if (await isExistingFile(destination)) {
+        throw error;
+      }
+
+      await rename(partialPath, destination);
+    } else {
+      throw error;
+    }
+  }
 
   const finalInfo = await lstat(destination);
 
@@ -356,7 +373,7 @@ async function finalizeDownload(
     throw new Error(`File size changed during finalization: ${destination}`);
   }
 
-  await unlink(partialPath);
+  await removeIfExists(partialPath);
   await removeIfExists(metadataPath);
 }
 

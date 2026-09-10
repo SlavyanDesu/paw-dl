@@ -109,3 +109,29 @@ Tests live beside the source files. Download tests use a local HTTP server and t
 The entrypoint is `src/index.ts`. API requests and response schemas live in `src/api/`;
 download planning, transfers, and terminal progress live in `src/downloader/`.
 Shared URL validation, naming, filesystem, and HTTP helpers live in `src/utils/`.
+
+## Termux (Android)
+
+Bun needs glibc, which Android doesn't ship, so install it via
+[bun-termux](https://github.com/Happ1ness-dev/bun-termux) (no proot required):
+
+```sh
+curl -fsSL "https://raw.githubusercontent.com/Happ1ness-dev/bun-termux/main/helper_scripts/bun-termux-manager" | bash -s install
+```
+
+Then use the project normally, but run from source — compiled binaries need the
+bun-termux wrapper and shim present, so they don't travel well:
+
+```sh
+git clone <this-repo> paw-dl
+cd paw-dl
+bun install
+bun run src/index.ts "https://pawchive.pw/<service>/user/<userId>" -o ~/downloads
+```
+
+Notes:
+
+- Keep output under Termux home (`~`). Shared storage (`/sdcard`) has no hard-link
+  support; the downloader falls back to an atomic rename there, but internal storage is safer.
+- All dependencies are pure JavaScript. If `bun install` complains about a native
+  module, retry with `BUN_OPTIONS="--os=android" bun install`.
