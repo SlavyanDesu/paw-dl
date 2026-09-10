@@ -5,26 +5,31 @@ Bun CLI app that downloads posts/files from pawchive.pw (`https://pawchive.pw/{s
 ## Commands
 
 - Runtime is **Bun**, not Node (lockfile: `bun.lock`). Install with `bun install`.
-- `bun run dev` / `bun run start` — run `src/index.ts`.
-- `bun test` — Bun's built-in test runner. **There are currently no tests**; downloader hits the live API with no fixtures. Don't fake offline tests for it.
-- `bun run format` — `bunx prettier . --write` (printWidth 120, single quote).
-- No lint/typecheck scripts exist. Typecheck with `bunx tsc --noEmit` (tsconfig sets `noEmit`, `types: ["bun"]`).
-- Build (not used in dev): `bun build ./src/index.ts --compile --outfile paw-dl`.
+- `bun run dev` / `bun run start` run `src/index.ts`; the root `index.ts` in package.json's `module` field does not exist.
+- `bun run src/index.ts --help` is an offline CLI smoke check. Runs with a valid URL hit the live API.
+- `bun test` runs offline checks beside the source files. Focus download/resume checks with `bun test src/downloader/download-file.test.ts`; they use a loopback HTTP server and temporary output, with no live API access.
+- CI (`.github/workflows/ci.yml`) runs `bun install --frozen-lockfile`, `bun test`, `bunx tsc --noEmit`, `bunx prettier . --check`, and the `--help` smoke check.
+- No lint/typecheck scripts exist. Typecheck with `bunx tsc --noEmit`.
+- `bun run format` rewrites the whole repo with Prettier; use `bunx prettier <changed-files> --check` for focused verification (120 columns, single quotes).
+- `bun run build` compiles a standalone `paw-dl` executable in the repo root; that artifact is not gitignored.
 
 ## Codebase conventions
 
-- Relative imports **must keep the `.ts` extension** (`./cli.ts`), and type-only imports **must use `import type`** (`verbatimModuleSyntax` on). Zero-config tooling will otherwise resolve these fine, but writing bare `./cli` imports silently breaks the tsconfig contract and repo style.
+- Keep `.ts` extensions on relative imports. Use `import type` or inline `type` specifiers for type-only imports (`verbatimModuleSyntax` is enabled).
 - User-facing console messages (errors/logs) are in **English**.
+- Commits use conventional-commit style (`feat:`, `chore:`, `init:`).
 
 ## Architecture
 
-- `src/cli.ts` (commander) parses the URL and flags; `--post <n>` limits a creator run to `n` posts (fetches all when omitted) and is only valid for creator URLs, `--include-files` is a comma-separated extension list (or `all`), `-f/--force` bypasses the output lock.
-- `src/api/` — pawchive.pw API v1 via `fetch` + `p-retry`. `requestJson` retries 408/429/5xx with `Retry-After` backoff (in `client.ts`). `schemas.ts` validates responses with zod; API tolerates several "empty file" shapes (null / undefined / `{}` / empty path).
-- `src/downloader/` — per-file resume download (`.part` + `.part.json`), then hard-link to final name. Per-post state lives in the output folder: `.manifest.json` (records source/etag/size per file), `.post-id` (identity marker), so folders survive re-runs. `queue.ts` is a p-limit wrapper. Default concurrency is 3.
-- `src/lock.ts` — `.paw-dl.lock` JSON file in the output dir keyed by PID; a stale lock from a dead PID is auto-reclaimed. Signals/uncaught exceptions release it.
-- Output layout per post: `<output>/[DDMMYYYY] <user>-<title>[/]` folder containing numbered media files and the hidden dotfiles above.
+- `src/index.ts` processes posts sequentially; `src/downloader/queue.ts` limits concurrent file downloads to 3. Creator listings paginate in batches of 50 and fetch each post's detail separately.
+- `src/cli.ts`: output defaults to cwd; use `-o <folder>` for live checks. `--post <n>` limits creator URLs only; omitting it fetches all posts. `--include-files zip,psd` (or `all`) adds to the default image/video filter; deferred attachments are always skipped.
+- `src/api/client.ts` uses `https://pawchive.pw/api/v1`; files use `https://file.pawchive.pw/data/...`. Shared retry statuses and `Retry-After` parsing live in `src/utils/http.ts` (408/429/500/502/503/504).
+- `src/utils/attachment-url.ts` owns attachment URL validation and query-free source identity for both planning and downloading. `src/downloader/progress.ts` owns the shared terminal display.
+- `src/api/schemas.ts` accepts wrapped or bare post/list responses and empty attachments as null, undefined, `{}`, or an empty path; preserve this API compatibility.
 
-## Tooling notes
+## Download state
 
-- `.prettierignore` only excludes `build` and `coverage`; `node_modules` is gitignored so Prettier formats it too.
-- Commits use conventional-commit style (`feat:`, `chore:`, `init:`).
+- Post folders are `<output>/[DDMMYYYY] <user>-<title>/`; `src/utils/filename.ts` rejects missing/invalid published dates rather than inventing a fallback.
+- `.post-id` identifies the service/user/post for folder reuse; `.manifest.json` maps source URLs to stable filenames, sizes and ETags. Keep these with downloaded files: an existing final file without a matching manifest entry is an error, not a skip. Manifest filenames are validated to stay inside the post folder, and each saved file is recorded immediately so interrupted runs keep completed files.
+- `src/downloader/download-file.ts` resumes from `.part` + `.part.json` only with matching source metadata and a strong ETag. Finalization hard-links the partial to the final name without overwriting; the output filesystem must support hard links.
+- `src/lock.ts` stores a PID lock at `<output>/.paw-dl.lock`; dead-PID locks are reclaimed. `--force` bypasses this lock, not file/manifest validation. `src/index.ts` handles lock release on signals and uncaught exceptions.
