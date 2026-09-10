@@ -12,7 +12,8 @@ export type CliOptions = {
 
 type ParsedFlags = {
   output?: string | true;
-  postCount?: number;
+  // Commander names this after the long flag (--post), not our internal name.
+  post?: number;
   includeFiles?: string[];
   force: boolean;
 };
@@ -99,7 +100,7 @@ export function parseCli(args: string[] = Bun.argv.slice(2)): CliOptions | null 
   return {
     target,
     output,
-    postCount: options.postCount,
+    postCount: options.post,
     includeFiles: options.includeFiles ?? [],
     force: options.force ?? false,
   };
