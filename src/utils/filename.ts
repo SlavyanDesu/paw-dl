@@ -31,7 +31,7 @@ export function formatPostDate(published: string | null): string {
     throw new Error(`The published date is invalid: ${isoDate}`);
   }
 
-  return `${day}${month}${year}`;
+  return `${year}${month}${day}`;
 }
 
 export function createPostNames(
