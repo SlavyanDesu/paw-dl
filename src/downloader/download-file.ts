@@ -1,24 +1,21 @@
 import { link, lstat, mkdir, readFile, unlink } from 'node:fs/promises';
 import { basename, dirname } from 'node:path';
-import { Readable, Transform } from 'node:stream';
+import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createWriteStream } from 'node:fs';
 
-import cliProgress from 'cli-progress';
 import pRetry, { AbortError } from 'p-retry';
 import { z } from 'zod';
 
 import type { Attachment } from '../api/schemas.ts';
 
 import { atomicWriteJson, isExistingFile, removeIfExists } from '../utils/fs.ts';
-import { FILE_ORIGIN, RETRYABLE_STATUS, parseRetryAfterToTimestamp } from '../utils/http.ts';
+import { RETRYABLE_STATUS, parseRetryAfterToTimestamp } from '../utils/http.ts';
+import { createFileUrl, sourceIdentity } from '../utils/attachment-url.ts';
+import { ProgressTracker } from './progress.ts';
 
 const DOWNLOAD_TIMEOUT_MS = 30 * 60_000;
 const MAX_RETRY_WAIT_SLEEP_MS = 60_000;
-const PROGRESS_THROTTLE_MS = 200;
-const PROGRESS_BAR_SIZE = 16;
-const PROGRESS_FPS = 5;
-const MAX_DISPLAY_NAME_LENGTH = 32;
 
 export type FileManifestEntry = {
   filename: string;
@@ -56,224 +53,8 @@ class RetryableDownloadError extends Error {
 }
 
 /*
- * Progress bar
- */
-
-const PROGRESS_FORMAT = '{bar} | {filename} | {percent} | {size} | {speed} | ETA {etaText} | {state}';
-
-const PROGRESS_INITIAL_STATE = {
-  percent: '--',
-  size: '0 B / ?',
-  speed: '--',
-  etaText: '--',
-  state: 'waiting',
-};
-
-let progressGroup: cliProgress.MultiBar | undefined;
-let activeProgressBars = 0;
-
-function formatBytes(bytes: number): string {
-  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
-
-  let value = bytes;
-  let unitIndex = 0;
-
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex++;
-  }
-
-  const decimals = unitIndex === 0 ? 0 : 1;
-
-  return `${value.toFixed(decimals)} ${units[unitIndex]}`;
-}
-
-class ProgressTracker {
-  private readonly group: cliProgress.MultiBar | undefined;
-  private readonly bar: cliProgress.SingleBar | undefined;
-
-  private received = 0;
-  private initialBytes = 0;
-  private total: number | null = null;
-  private startedAt = performance.now();
-  private lastUpdate = 0;
-
-  constructor(destination: string) {
-    if (process.stderr.isTTY && !progressGroup) {
-      progressGroup = new cliProgress.MultiBar(
-        {
-          format: PROGRESS_FORMAT,
-          barsize: PROGRESS_BAR_SIZE,
-          fps: PROGRESS_FPS,
-          hideCursor: true,
-          clearOnComplete: true,
-          stopOnComplete: false,
-        },
-        cliProgress.Presets.shades_classic,
-      );
-    }
-
-    this.group = progressGroup;
-
-    const displayName = Array.from(basename(destination).replace(/[\u0000-\u001F\u007F]/g, '_'))
-      .slice(0, MAX_DISPLAY_NAME_LENGTH)
-      .join('');
-
-    this.bar = this.group?.create(1, 0, {
-      filename: displayName,
-      ...PROGRESS_INITIAL_STATE,
-    });
-
-    if (this.bar) {
-      activeProgressBars++;
-    }
-  }
-
-  private render(force = false): void {
-    const now = performance.now();
-
-    if (!force && now - this.lastUpdate < PROGRESS_THROTTLE_MS) {
-      return;
-    }
-
-    this.lastUpdate = now;
-
-    const elapsedSeconds = (now - this.startedAt) / 1_000;
-    const transferred = this.received - this.initialBytes;
-
-    const speed = elapsedSeconds > 0 ? transferred / elapsedSeconds : 0;
-
-    const currentTotal = this.total;
-
-    let percentage: number | null = null;
-    let eta: number | null = null;
-    let progressValue = 0;
-
-    if (currentTotal !== null && currentTotal > 0) {
-      percentage = Math.min((this.received / currentTotal) * 100, 100);
-
-      progressValue = Math.min(this.received, currentTotal);
-
-      if (speed > 0) {
-        eta = Math.ceil(Math.max(currentTotal - this.received, 0) / speed);
-      }
-    }
-
-    this.bar?.update(progressValue, {
-      percent: percentage === null ? '--' : `${percentage.toFixed(1)}%`,
-
-      size: `${formatBytes(this.received)} / ` + `${currentTotal === null ? '?' : formatBytes(currentTotal)}`,
-
-      speed: `${formatBytes(speed)}/s`,
-      etaText: eta === null ? '--' : `${eta}s`,
-    });
-  }
-
-  reset(attempt: number): void {
-    this.received = 0;
-    this.initialBytes = 0;
-    this.total = null;
-    this.startedAt = performance.now();
-    this.lastUpdate = 0;
-
-    this.bar?.setTotal(1);
-
-    this.bar?.update(0, {
-      ...PROGRESS_INITIAL_STATE,
-      state: `request #${attempt}`,
-    });
-  }
-
-  meter(offset: number, totalBytes: number | null): Transform {
-    this.initialBytes = offset;
-    this.received = offset;
-    this.total = totalBytes;
-    this.startedAt = performance.now();
-    this.lastUpdate = 0;
-
-    this.bar?.setTotal(totalBytes !== null && totalBytes > 0 ? totalBytes : 1);
-
-    this.bar?.update({
-      state: offset > 0 ? 'resume' : 'download',
-    });
-
-    this.render(true);
-
-    return new Transform({
-      transform: (chunk: Buffer, _encoding, callback) => {
-        this.received += chunk.byteLength;
-        this.render();
-
-        callback(null, chunk);
-      },
-
-      flush: (callback) => {
-        this.render(true);
-        callback();
-      },
-    });
-  }
-
-  setState(state: string): void {
-    this.bar?.update({
-      state,
-      speed: '--',
-      etaText: '--',
-    });
-  }
-
-  retry(message: string): void {
-    this.bar?.update({
-      state: 'waiting for retry',
-      speed: '--',
-      etaText: '--',
-    });
-
-    const safeMessage = message.replace(/[\u0000-\u001F\u007F]/g, ' ');
-
-    if (this.group) {
-      this.group.log(`${safeMessage}\n`);
-    } else {
-      console.warn(safeMessage);
-    }
-  }
-
-  close(): void {
-    if (!this.group || !this.bar) {
-      return;
-    }
-
-    this.group.remove(this.bar);
-    activeProgressBars--;
-
-    if (activeProgressBars === 0) {
-      this.group.stop();
-      progressGroup = undefined;
-    }
-  }
-}
-
-/*
  * URL and filesystem
  */
-
-function createFileUrl(file: Attachment): URL {
-  if (!file.path.startsWith('/') || file.path.startsWith('//') || /[\\?#]/.test(file.path)) {
-    throw new Error(`Invalid attachment path: ${file.path}`);
-  }
-
-  const url = new URL(`/data${file.path}`, FILE_ORIGIN);
-
-  if (url.origin !== FILE_ORIGIN || !url.pathname.startsWith('/data/')) {
-    throw new Error('Attachment URL escapes file location.');
-  }
-
-  if (file.name) {
-    url.searchParams.set('f', file.name);
-  }
-
-  return url;
-}
 
 async function verifyExistingFile(
   destination: string,
@@ -357,10 +138,6 @@ async function readResumeMetadata(path: string): Promise<ResumeMetadata | null> 
   }
 }
 
-async function writeResumeMetadata(path: string, metadata: ResumeMetadata): Promise<void> {
-  await atomicWriteJson(path, metadata);
-}
-
 type ResumeContext = {
   canResume: boolean;
   metadata: ResumeMetadata | null;
@@ -380,6 +157,7 @@ async function readResumeContext(
 
   const savedETag = metadata ? strongETag(metadata.etag) : null;
 
+  // Only resume if the server can confirm it's still the same file.
   const canResume =
     !forceRestart &&
     partialSize > 0 &&
@@ -503,6 +281,7 @@ function interpretResponse(response: Response, context: ResumeContext): Response
     const changedFile =
       range !== null && (etag !== context.savedETag || (metadata.total !== null && range.total !== metadata.total));
 
+    // Appending a different range or version would silently corrupt the file.
     if (invalidRange || changedFile) {
       return { kind: 'retryFull', message: 'Resume response mismatch; will request the full file.' };
     }
@@ -539,12 +318,6 @@ async function streamToFile(
 ): Promise<number> {
   const source = Readable.fromWeb(response.body!);
 
-  let sourceFailed = false;
-
-  source.once('error', () => {
-    sourceFailed = true;
-  });
-
   const writer = createWriteStream(partialPath, {
     // 206 resumes from the end of the file.
     // 200 clears the file and writes from the beginning.
@@ -560,11 +333,9 @@ async function streamToFile(
       throw error;
     }
 
-    if (sourceFailed) {
-      throw new RetryableDownloadError('Transfer disconnected; partial retained.', { cause: error });
-    }
-
-    throw error;
+    // Anything else mid-transfer (dropped connection, reset stream) keeps a
+    // usable partial, so retrying from the recorded offset is safe.
+    throw new RetryableDownloadError('Transfer disconnected; partial retained.', { cause: error });
   }
 
   return (await lstat(partialPath)).size;
@@ -576,6 +347,7 @@ async function finalizeDownload(
   metadataPath: string,
   expectedSize: number,
 ): Promise<void> {
+  // A hard link fails if the destination exists, so we won't overwrite it.
   await link(partialPath, destination);
 
   const finalInfo = await lstat(destination);
@@ -600,14 +372,13 @@ async function performDownload(
 
   const url = createFileUrl(file);
 
-  // The ?f= parameter only affects the download filename.
-  const sourceIdentity = `${url.origin}${url.pathname}`;
+  const source = sourceIdentity(url);
 
   await mkdir(dirname(destination), {
     recursive: true,
   });
 
-  const existing = await verifyExistingFile(destination, sourceIdentity, options.expected);
+  const existing = await verifyExistingFile(destination, source, options.expected);
 
   if (existing) {
     progress.setState('verified');
@@ -628,7 +399,7 @@ async function performDownload(
     async (attemptNumber) => {
       progress.reset(attemptNumber);
 
-      const resume = await readResumeContext(partialPath, metadataPath, sourceIdentity, forceRestart);
+      const resume = await readResumeContext(partialPath, metadataPath, source, forceRestart);
 
       let response: Response;
 
@@ -672,9 +443,9 @@ async function performDownload(
               }
             }
 
-            await writeResumeMetadata(metadataPath, {
+            await atomicWriteJson(metadataPath, {
               version: 1,
-              source: sourceIdentity,
+              source,
               etag: outcome.etag,
               total: outcome.total,
             });
@@ -745,7 +516,7 @@ async function performDownload(
     destination,
     manifest: {
       filename: basename(destination),
-      source: sourceIdentity,
+      source,
       size: completed.size,
       etag: completed.etag,
     },

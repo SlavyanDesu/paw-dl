@@ -3,7 +3,7 @@ import { getCreator, getPost, iterateCreatorPosts } from './api/client.ts';
 import { createQueue } from './downloader/queue.ts';
 import { downloadPost } from './downloader/download-post.ts';
 import { acquireLock, releaseLock } from './lock.ts';
-import { getBanner } from './banner.ts';
+import { BANNER } from './banner.ts';
 import { DEFAULT_CONCURRENCY, errorMessage } from './utils/http.ts';
 import type { Target } from './utils/parse-url.ts';
 
@@ -71,16 +71,6 @@ function setupSignalHandlers(output: string): () => Promise<void> {
   return releaseOnce;
 }
 
-function createTotals(): Totals {
-  return {
-    posts: 0,
-    saved: 0,
-    skipped: 0,
-    failedFiles: 0,
-    failedPosts: 0,
-  };
-}
-
 function printSummary(totals: Totals, listingFailed: boolean): void {
   console.log('\nResult:');
   console.log(`Processed post(s): ${totals.posts}`);
@@ -97,7 +87,7 @@ function printSummary(totals: Totals, listingFailed: boolean): void {
 async function downloadAll(options: DownloadAllOptions): Promise<{ totals: Totals; listingFailed: boolean }> {
   const { target, creatorName, output, postCount, includeFiles } = options;
 
-  const totals = createTotals();
+  const totals: Totals = { posts: 0, saved: 0, skipped: 0, failedFiles: 0, failedPosts: 0 };
   const queue = createQueue(DEFAULT_CONCURRENCY);
 
   async function processPost(postId: string): Promise<void> {
@@ -142,6 +132,7 @@ async function downloadAll(options: DownloadAllOptions): Promise<{ totals: Total
   let listingFailed = false;
 
   try {
+    // Finish each post before starting the next; its files still download concurrently.
     for await (const summary of iterateCreatorPosts(target, postCount)) {
       await processPost(summary.id);
     }
@@ -155,7 +146,7 @@ async function downloadAll(options: DownloadAllOptions): Promise<{ totals: Total
 }
 
 async function main(): Promise<void> {
-  console.log(getBanner());
+  console.log(BANNER);
   console.log();
 
   const options = parseCli();

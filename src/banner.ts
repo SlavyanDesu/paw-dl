@@ -1,17 +1,5 @@
-import figlet from 'figlet';
-
-let cachedBanner: string | null = null;
-
-export function getBanner(): string {
-  if (cachedBanner) {
-    return cachedBanner;
-  }
-
-  cachedBanner = figlet.textSync('paw-dl', {
-    font: 'Small',
-    horizontalLayout: 'default',
-    verticalLayout: 'default',
-  });
-
-  return cachedBanner;
-}
+export const BANNER = `                           _ _
+  _ __  __ ___ __ _____ __| | |
+ | '_ \\/ _\` \\ V  V /___/ _\` | |
+ | .__/\\__,_|\\_/\\_/    \\__,_|_|
+ |_|`;

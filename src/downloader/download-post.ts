@@ -1,5 +1,5 @@
 import { lstat, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { extname, join } from 'node:path';
+import { basename, extname, join } from 'node:path';
 
 import { z } from 'zod';
 
@@ -8,7 +8,7 @@ import type { CreatorRef } from '../api/client.ts';
 
 import { createFileName, createPostNames, sanitizeName } from '../utils/filename.ts';
 import { atomicWriteJson } from '../utils/fs.ts';
-import { FILE_ORIGIN } from '../utils/http.ts';
+import { createFileUrl, sourceIdentity } from '../utils/attachment-url.ts';
 
 import { downloadFile, type FileManifestEntry } from './download-file.ts';
 
@@ -50,7 +50,11 @@ const MEDIA_EXTENSIONS = new Set([
 ]);
 
 const ManifestEntrySchema = z.object({
-  filename: z.string().min(1),
+  // No separators or parent refs: loaded names must stay inside the post folder.
+  filename: z
+    .string()
+    .min(1)
+    .refine((name) => name === basename(name) && name !== '.' && name !== '..', 'Unsafe filename in manifest.'),
   source: z.string().min(1),
   size: z.number().int().nonnegative().safe(),
   etag: z.string().nullable(),
@@ -195,6 +199,7 @@ async function preparePostDirectory(
         throw error;
       }
 
+      // Matching titles aren't enough; the marker tells us who owns this folder.
       if (!(await isSamePost(directory, identity))) {
         continue;
       }
@@ -252,27 +257,9 @@ async function readManifest(path: string, identity: string): Promise<PostManifes
   return result.data;
 }
 
-async function writeManifest(path: string, manifest: PostManifest): Promise<void> {
-  await atomicWriteJson(path, manifest, { sync: true });
-}
-
 /*
  * Stable naming
  */
-
-function createSourceIdentity(file: Attachment): string {
-  if (!file.path.startsWith('/') || file.path.startsWith('//') || /[\\?#]/.test(file.path)) {
-    throw new Error(`Invalid attachment path: ${file.path}`);
-  }
-
-  const url = new URL(`/data${file.path}`, FILE_ORIGIN);
-
-  if (url.origin !== FILE_ORIGIN || !url.pathname.startsWith('/data/')) {
-    throw new Error('Attachment URL escapes file location.');
-  }
-
-  return `${url.origin}${url.pathname}`;
-}
 
 function createJobs(files: Attachment[], directory: string, fileStem: string, manifest: PostManifest): DownloadJob[] {
   const existingBySource = new Map<string, FileManifestEntry>();
@@ -294,15 +281,23 @@ function createJobs(files: Attachment[], directory: string, fileStem: string, ma
   const jobs: DownloadJob[] = [];
 
   for (const file of files) {
-    const source = createSourceIdentity(file);
+    const source = sourceIdentity(createFileUrl(file));
     const existing = existingBySource.get(source);
 
+    // Keep the old filename when rerunning with a different filter.
     if (existing) {
+      const destination = join(directory, existing.filename);
+
+      // Belt and suspenders with the schema check above; never write outside the post folder.
+      if (basename(destination) !== existing.filename) {
+        throw new Error(`Manifest filename escapes post folder: ${existing.filename}`);
+      }
+
       jobs.push({
         file,
         source,
         expected: existing,
-        destination: join(directory, existing.filename),
+        destination,
       });
 
       continue;
@@ -367,16 +362,26 @@ export async function downloadPost(options: DownloadPostOptions): Promise<PostDo
 
   console.log(`[Post ${post.id}] ${post.title}: ` + `${jobs.length} file`);
 
+  // Save progress after each file, so a crash keeps completed downloads recorded.
+  let persist: Promise<void> = Promise.resolve();
+
   const results = await queue.run(
-    jobs.map(
-      (job) => () =>
-        downloadFile(job.file, job.destination, {
-          expected: job.expected,
-        }),
-    ),
+    jobs.map((job) => async () => {
+      const result = await downloadFile(job.file, job.destination, {
+        expected: job.expected,
+      });
+
+      if (result.status === 'saved') {
+        manifest.files[result.manifest.source] = result.manifest;
+        persist = persist.then(() => atomicWriteJson(manifestPath, manifest, { sync: true }));
+        await persist;
+      }
+
+      return result;
+    }),
   );
 
-  let manifestChanged = false;
+  await persist;
 
   for (const [index, result] of results.entries()) {
     const job = jobs[index];
@@ -392,11 +397,6 @@ export async function downloadPost(options: DownloadPostOptions): Promise<PostDo
         summary.skipped++;
       }
 
-      const entry = result.value.manifest;
-
-      manifest.files[entry.source] = entry;
-      manifestChanged = true;
-
       console.log(`[${result.value.status}] ` + job.destination);
 
       continue;
@@ -410,10 +410,6 @@ export async function downloadPost(options: DownloadPostOptions): Promise<PostDo
     const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
 
     console.error(`[failed] ${job.destination}: ${message}`);
-  }
-
-  if (manifestChanged) {
-    await writeManifest(manifestPath, manifest);
   }
 
   return summary;

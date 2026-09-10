@@ -17,13 +17,5 @@ export function createQueue(concurrency = 3) {
 
   return {
     run,
-
-    get activeCount(): number {
-      return limit.activeCount;
-    },
-
-    get pendingCount(): number {
-      return limit.pendingCount;
-    },
   };
 }
