@@ -1,14 +1,12 @@
-import { z } from "zod";
+import { z } from 'zod';
 
-const IdSchema = z
-  .string()
-  .refine((value) => value.trim().length > 0, "ID tidak boleh kosong.");
+const IdSchema = z.string().refine((value) => value.trim().length > 0, 'ID tidak boleh kosong.');
 
 export const AttachmentSchema = z.object({
   name: z
     .string()
     .nullish()
-    .transform((value) => value ?? ""),
+    .transform((value) => value ?? ''),
   path: z.string().min(1),
   deferred: z.boolean().default(false),
 });
@@ -34,12 +32,7 @@ const OptionalAttachmentSchema = AttachmentSchema.extend({
   });
 
 export const CreatorSchema = z.object({
-  name: z
-    .string()
-    .refine(
-      (value) => value.trim().length > 0,
-      "Nama kreator tidak boleh kosong.",
-    ),
+  name: z.string().refine((value) => value.trim().length > 0, 'Nama kreator tidak boleh kosong.'),
 });
 
 export const PostSummarySchema = z.object({
@@ -56,21 +49,14 @@ export const PostSchema = z.object({
   file: OptionalAttachmentSchema,
   attachments: z
     .array(OptionalAttachmentSchema)
-    .transform((items) =>
-      items.filter((item): item is Attachment => item !== null),
-    ),
+    .transform((items) => items.filter((item): item is Attachment => item !== null)),
 });
 
-const PostResponseSchema = z.union([
-  z.object({ post: PostSchema }).transform((value) => value.post),
-  PostSchema,
-]);
+const PostResponseSchema = z.union([z.object({ post: PostSchema }).transform((value) => value.post), PostSchema]);
 
 const PostListResponseSchema = z.union([
   z.array(PostSummarySchema),
-  z
-    .object({ posts: z.array(PostSummarySchema) })
-    .transform((value) => value.posts),
+  z.object({ posts: z.array(PostSummarySchema) }).transform((value) => value.posts),
 ]);
 
 export type Creator = z.infer<typeof CreatorSchema>;

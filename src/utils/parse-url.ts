@@ -1,13 +1,13 @@
-const SITE_ORIGIN = "https://pawchive.pw";
+const SITE_ORIGIN = 'https://pawchive.pw';
 
 type CreatorTarget = {
-  type: "creator";
+  type: 'creator';
   service: string;
   userId: string;
 };
 
 type PostTarget = {
-  type: "post";
+  type: 'post';
   service: string;
   userId: string;
   postId: string;
@@ -19,7 +19,7 @@ export function parseTarget(input: string): Target {
   const url = new URL(input);
 
   if (url.origin !== SITE_ORIGIN || url.username || url.password) {
-    throw new Error(`URL harus berasal dari ${SITE_ORIGIN}`);
+    throw new Error(`URL must be from ${SITE_ORIGIN}`);
   }
 
   const pattern = /^\/([\w-]+)\/user\/([\w-]+)(?:\/post\/([\w-]+))?\/?$/;
@@ -27,18 +27,18 @@ export function parseTarget(input: string): Target {
   const match = url.pathname.match(pattern);
 
   if (!match) {
-    throw new Error("Gunakan URL halaman kreator atau post.");
+    throw new Error('Use post or creator URL.');
   }
 
   const [, service, userId, postId] = match;
 
   if (!service || !userId) {
-    throw new Error("Service atau user ID tidak ditemukan.");
+    throw new Error('Service or user ID not found.');
   }
 
   if (postId) {
     return {
-      type: "post",
+      type: 'post',
       service,
       userId,
       postId,
@@ -46,7 +46,7 @@ export function parseTarget(input: string): Target {
   }
 
   return {
-    type: "creator",
+    type: 'creator',
     service,
     userId,
   };

@@ -1,25 +1,17 @@
-import {
-  link,
-  lstat,
-  mkdir,
-  open,
-  readFile,
-  rename,
-  unlink,
-} from "node:fs/promises";
-import { randomUUID } from "node:crypto";
-import { basename, dirname } from "node:path";
-import { Readable, Transform } from "node:stream";
-import { pipeline } from "node:stream/promises";
-import { createWriteStream } from "node:fs";
+import { link, lstat, mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { basename, dirname } from 'node:path';
+import { Readable, Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { createWriteStream } from 'node:fs';
 
-import cliProgress from "cli-progress";
-import pRetry, { AbortError } from "p-retry";
-import { z } from "zod";
+import cliProgress from 'cli-progress';
+import pRetry, { AbortError } from 'p-retry';
+import { z } from 'zod';
 
-import type { Attachment } from "../api/schemas.ts";
+import type { Attachment } from '../api/schemas.ts';
 
-const FILE_ORIGIN = "https://file.pawchive.pw";
+const FILE_ORIGIN = 'https://file.pawchive.pw';
 const DOWNLOAD_TIMEOUT_MS = 30 * 60_000;
 
 const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
@@ -32,7 +24,7 @@ export type FileManifestEntry = {
 };
 
 export type DownloadResult = {
-  status: "saved" | "skipped";
+  status: 'saved' | 'skipped';
   destination: string;
   manifest: FileManifestEntry;
 };
@@ -55,7 +47,7 @@ class RetryableDownloadError extends Error {
 
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
-    this.name = "RetryableDownloadError";
+    this.name = 'RetryableDownloadError';
   }
 }
 
@@ -67,7 +59,7 @@ let progressGroup: cliProgress.MultiBar | undefined;
 let activeBars = 0;
 
 function formatBytes(bytes: number): string {
-  const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
 
   let value = bytes;
   let unitIndex = 0;
@@ -86,9 +78,7 @@ function createProgress(destination: string) {
   if (process.stderr.isTTY && !progressGroup) {
     progressGroup = new cliProgress.MultiBar(
       {
-        format:
-          "{bar} | {filename} | {percent} | " +
-          "{size} | {speed} | ETA {etaText} | {state}",
+        format: '{bar} | {filename} | {percent} | ' + '{size} | {speed} | ETA {etaText} | {state}',
         barsize: 16,
         fps: 5,
         hideCursor: true,
@@ -101,19 +91,17 @@ function createProgress(destination: string) {
 
   const group = progressGroup;
 
-  const displayName = Array.from(
-    basename(destination).replace(/[\u0000-\u001F\u007F]/g, "_"),
-  )
+  const displayName = Array.from(basename(destination).replace(/[\u0000-\u001F\u007F]/g, '_'))
     .slice(0, 32)
-    .join("");
+    .join('');
 
   const bar = group?.create(1, 0, {
     filename: displayName,
-    percent: "--",
-    size: "0 B / ?",
-    speed: "--",
-    etaText: "--",
-    state: "menunggu",
+    percent: '--',
+    size: '0 B / ?',
+    speed: '--',
+    etaText: '--',
+    state: 'waiting',
   });
 
   if (bar) {
@@ -157,14 +145,12 @@ function createProgress(destination: string) {
     }
 
     bar?.update(progressValue, {
-      percent: percentage === null ? "--" : `${percentage.toFixed(1)}%`,
+      percent: percentage === null ? '--' : `${percentage.toFixed(1)}%`,
 
-      size:
-        `${formatBytes(received)} / ` +
-        `${currentTotal === null ? "?" : formatBytes(currentTotal)}`,
+      size: `${formatBytes(received)} / ` + `${currentTotal === null ? '?' : formatBytes(currentTotal)}`,
 
       speed: `${formatBytes(speed)}/s`,
-      etaText: eta === null ? "--" : `${eta}s`,
+      etaText: eta === null ? '--' : `${eta}s`,
     });
   }
 
@@ -179,10 +165,10 @@ function createProgress(destination: string) {
       bar?.setTotal(1);
 
       bar?.update(0, {
-        percent: "--",
-        size: "0 B / ?",
-        speed: "--",
-        etaText: "--",
+        percent: '--',
+        size: '0 B / ?',
+        speed: '--',
+        etaText: '--',
         state: `request #${attempt}`,
       });
     },
@@ -197,7 +183,7 @@ function createProgress(destination: string) {
       bar?.setTotal(totalBytes !== null && totalBytes > 0 ? totalBytes : 1);
 
       bar?.update({
-        state: offset > 0 ? "resume" : "download",
+        state: offset > 0 ? 'resume' : 'download',
       });
 
       render(true);
@@ -220,19 +206,19 @@ function createProgress(destination: string) {
     setState(state: string): void {
       bar?.update({
         state,
-        speed: "--",
-        etaText: "--",
+        speed: '--',
+        etaText: '--',
       });
     },
 
     retry(message: string): void {
       bar?.update({
-        state: "menunggu retry",
-        speed: "--",
-        etaText: "--",
+        state: 'waiting for retry',
+        speed: '--',
+        etaText: '--',
       });
 
-      const safeMessage = message.replace(/[\u0000-\u001F\u007F]/g, " ");
+      const safeMessage = message.replace(/[\u0000-\u001F\u007F]/g, ' ');
 
       if (group) {
         group.log(`${safeMessage}\n`);
@@ -258,26 +244,22 @@ function createProgress(destination: string) {
 }
 
 /*
- * URL dan filesystem
+ * URL and filesystem
  */
 
 function createFileUrl(file: Attachment): URL {
-  if (
-    !file.path.startsWith("/") ||
-    file.path.startsWith("//") ||
-    /[\\?#]/.test(file.path)
-  ) {
-    throw new Error(`Path attachment tidak valid: ${file.path}`);
+  if (!file.path.startsWith('/') || file.path.startsWith('//') || /[\\?#]/.test(file.path)) {
+    throw new Error(`Invalid attachment path: ${file.path}`);
   }
 
   const url = new URL(`/data${file.path}`, FILE_ORIGIN);
 
-  if (url.origin !== FILE_ORIGIN || !url.pathname.startsWith("/data/")) {
-    throw new Error("URL attachment keluar dari lokasi file.");
+  if (url.origin !== FILE_ORIGIN || !url.pathname.startsWith('/data/')) {
+    throw new Error('Attachment URL escapes file location.');
   }
 
   if (file.name) {
-    url.searchParams.set("f", file.name);
+    url.searchParams.set('f', file.name);
   }
 
   return url;
@@ -288,12 +270,12 @@ async function isExistingFile(path: string): Promise<boolean> {
     const info = await lstat(path);
 
     if (!info.isFile()) {
-      throw new Error(`Path sudah ada tetapi bukan file biasa: ${path}`);
+      throw new Error(`Path already exists but is not a regular file: ${path}`);
     }
 
     return true;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       return false;
     }
 
@@ -305,7 +287,7 @@ async function removeIfExists(path: string): Promise<void> {
   try {
     await unlink(path);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
       throw error;
     }
   }
@@ -337,15 +319,13 @@ function parseByteCount(value: string | null): number | null {
   return number;
 }
 
-async function readResumeMetadata(
-  path: string,
-): Promise<ResumeMetadata | null> {
+async function readResumeMetadata(path: string): Promise<ResumeMetadata | null> {
   let text: string;
 
   try {
-    text = await readFile(path, "utf8");
+    text = await readFile(path, 'utf8');
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       return null;
     }
 
@@ -365,16 +345,13 @@ async function readResumeMetadata(
   }
 }
 
-async function writeResumeMetadata(
-  path: string,
-  metadata: ResumeMetadata,
-): Promise<void> {
+async function writeResumeMetadata(path: string, metadata: ResumeMetadata): Promise<void> {
   const temporaryPath = `${path}.${randomUUID()}.tmp`;
-  const handle = await open(temporaryPath, "wx");
+  const handle = await open(temporaryPath, 'wx');
 
   try {
     try {
-      await handle.writeFile(`${JSON.stringify(metadata, null, 2)}\n`, "utf8");
+      await handle.writeFile(`${JSON.stringify(metadata, null, 2)}\n`, 'utf8');
     } finally {
       await handle.close();
     }
@@ -392,16 +369,14 @@ function getRetryAt(value: string | null): number {
 
   const raw = value.trim();
 
-  const timestamp = /^\d+$/.test(raw)
-    ? Date.now() + Number(raw) * 1_000
-    : Date.parse(raw);
+  const timestamp = /^\d+$/.test(raw) ? Date.now() + Number(raw) * 1_000 : Date.parse(raw);
 
   if (Number.isNaN(timestamp)) {
     return 0;
   }
 
   if (!Number.isSafeInteger(timestamp)) {
-    throw new AbortError("Nilai Retry-After terlalu besar.");
+    throw new AbortError('Retry-After value is too large.');
   }
 
   return timestamp;
@@ -421,28 +396,21 @@ async function verifyExistingFile(
   }
 
   if (!expected) {
-    throw new Error(
-      `File final ada tetapi belum tercatat di manifest: ` + destination,
-    );
+    throw new Error(`Final file exists but is not recorded in the manifest: ` + destination);
   }
 
   if (expected.filename !== basename(destination)) {
-    throw new Error(`Nama file berbeda dari manifest: ${destination}`);
+    throw new Error(`Filename differs from manifest: ${destination}`);
   }
 
   if (expected.source !== sourceIdentity) {
-    throw new Error(
-      `File final berasal dari attachment berbeda: ` + destination,
-    );
+    throw new Error(`Final file originates from a different attachment: ` + destination);
   }
 
   const info = await lstat(destination);
 
   if (info.size !== expected.size) {
-    throw new Error(
-      `Ukuran file final tidak cocok: ${destination} ` +
-        `(disk ${info.size}, manifest ${expected.size})`,
-    );
+    throw new Error(`Final file size mismatch: ${destination} ` + `(disk ${info.size}, manifest ${expected.size})`);
   }
 
   return expected;
@@ -459,29 +427,25 @@ async function performDownload(
   options: DownloadFileOptions,
 ): Promise<DownloadResult> {
   if (file.deferred) {
-    throw new Error(`Attachment belum tersedia: ${file.name || file.path}`);
+    throw new Error(`Attachment not yet available: ${file.name || file.path}`);
   }
 
   const url = createFileUrl(file);
 
-  // Parameter ?f= hanya memengaruhi nama download.
+  // The ?f= parameter only affects the download filename.
   const sourceIdentity = `${url.origin}${url.pathname}`;
 
   await mkdir(dirname(destination), {
     recursive: true,
   });
 
-  const existing = await verifyExistingFile(
-    destination,
-    sourceIdentity,
-    options.expected,
-  );
+  const existing = await verifyExistingFile(destination, sourceIdentity, options.expected);
 
   if (existing) {
-    progress.setState("verified");
+    progress.setState('verified');
 
     return {
-      status: "skipped",
+      status: 'skipped',
       destination,
       manifest: existing,
     };
@@ -515,12 +479,12 @@ async function performDownload(
       const offset = canResume ? partialSize : 0;
 
       const headers = new Headers({
-        "Accept-Encoding": "identity",
+        'Accept-Encoding': 'identity',
       });
 
       if (canResume && savedETag !== null) {
-        headers.set("Range", `bytes=${offset}-`);
-        headers.set("If-Range", savedETag);
+        headers.set('Range', `bytes=${offset}-`);
+        headers.set('If-Range', savedETag);
       }
 
       let response: Response;
@@ -531,7 +495,7 @@ async function performDownload(
           signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
         });
       } catch (error) {
-        throw new RetryableDownloadError("Request file gagal.", {
+        throw new RetryableDownloadError('File request failed.', {
           cause: error,
         });
       }
@@ -540,48 +504,38 @@ async function performDownload(
         if (response.status === 416 && canResume) {
           forceRestart = true;
 
-          throw new RetryableDownloadError(
-            "Range ditolak; percobaan berikutnya " + "dimulai dari awal.",
-          );
+          throw new RetryableDownloadError('Range rejected; next attempt ' + 'will start from the beginning.');
         }
 
         if (response.status !== 200 && response.status !== 206) {
           if (!RETRYABLE_STATUS.has(response.status)) {
-            throw new AbortError(`Download gagal: HTTP ${response.status}`);
+            throw new AbortError(`Download failed: HTTP ${response.status}`);
           }
 
-          const error = new RetryableDownloadError(
-            `Download gagal: HTTP ${response.status}`,
-          );
+          const error = new RetryableDownloadError(`Download failed: HTTP ${response.status}`);
 
-          error.retryAt = getRetryAt(response.headers.get("retry-after"));
+          error.retryAt = getRetryAt(response.headers.get('retry-after'));
 
           throw error;
         }
 
         if (!response.body) {
-          throw new AbortError("Respons download tidak memiliki body.");
+          throw new AbortError('Download response has no body.');
         }
 
-        const contentType = response.headers.get("content-type") ?? "";
+        const contentType = response.headers.get('content-type') ?? '';
 
-        if (contentType.toLowerCase().includes("text/html")) {
-          throw new AbortError("Server mengirim HTML, bukan attachment.");
+        if (contentType.toLowerCase().includes('text/html')) {
+          throw new AbortError('Server returned HTML instead of an attachment.');
         }
 
-        const encoding = response.headers
-          .get("content-encoding")
-          ?.trim()
-          .toLowerCase();
+        const encoding = response.headers.get('content-encoding')?.trim().toLowerCase();
 
-        if (encoding && encoding !== "identity") {
-          throw new AbortError(
-            "Server mengirim respons terkompresi; " +
-              "offset resume tidak aman.",
-          );
+        if (encoding && encoding !== 'identity') {
+          throw new AbortError('Server returned a compressed response; ' + 'resume offset is unsafe.');
         }
 
-        const responseETag = strongETag(response.headers.get("etag"));
+        const responseETag = strongETag(response.headers.get('etag'));
 
         let startOffset = 0;
         let total: number | null = null;
@@ -589,12 +543,10 @@ async function performDownload(
 
         if (response.status === 206) {
           if (!canResume || metadata === null) {
-            throw new AbortError("Server mengirim 206 tanpa request resume.");
+            throw new AbortError('Server sent 206 without a resume request.');
           }
 
-          const range = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(
-            response.headers.get("content-range") ?? "",
-          );
+          const range = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(response.headers.get('content-range') ?? '');
 
           const start = parseByteCount(range?.[1] ?? null);
 
@@ -602,9 +554,7 @@ async function performDownload(
 
           const completeSize = parseByteCount(range?.[3] ?? null);
 
-          const bodyLength = parseByteCount(
-            response.headers.get("content-length"),
-          );
+          const bodyLength = parseByteCount(response.headers.get('content-length'));
 
           const invalidRange =
             start === null ||
@@ -616,15 +566,12 @@ async function performDownload(
             (bodyLength !== null && bodyLength !== end - start + 1);
 
           const changedFile =
-            responseETag !== savedETag ||
-            (metadata.total !== null && completeSize !== metadata.total);
+            responseETag !== savedETag || (metadata.total !== null && completeSize !== metadata.total);
 
           if (invalidRange || changedFile) {
             forceRestart = true;
 
-            throw new RetryableDownloadError(
-              "Respons resume tidak cocok; " + "akan meminta file penuh.",
-            );
+            throw new RetryableDownloadError('Resume response mismatch; ' + 'will request the full file.');
           }
 
           startOffset = offset;
@@ -632,14 +579,14 @@ async function performDownload(
           responseEnd = end;
         } else {
           // HTTP 200 berarti body berisi file penuh.
-          total = parseByteCount(response.headers.get("content-length"));
+          total = parseByteCount(response.headers.get('content-length'));
         }
 
         if (response.status === 206) {
           const actualSize = (await lstat(partialPath)).size;
 
           if (actualSize !== startOffset) {
-            throw new AbortError("Ukuran partial berubah selama request.");
+            throw new AbortError('Partial size changed during request.');
           }
         }
 
@@ -656,14 +603,14 @@ async function performDownload(
 
         let sourceFailed = false;
 
-        source.once("error", () => {
+        source.once('error', () => {
           sourceFailed = true;
         });
 
         const writer = createWriteStream(partialPath, {
-          // 206 melanjutkan dari akhir file.
-          // 200 mengosongkan file lalu menulis dari awal.
-          flags: response.status === 206 ? "a" : "w",
+          // 206 resumes from the end of the file.
+          // 200 clears the file and writes from the beginning.
+          flags: response.status === 206 ? 'a' : 'w',
         });
 
         try {
@@ -671,19 +618,12 @@ async function performDownload(
         } catch (error) {
           const code = (error as NodeJS.ErrnoException).code;
 
-          if (
-            ["ENOSPC", "EDQUOT", "EACCES", "EPERM", "EIO", "EROFS"].includes(
-              code ?? "",
-            )
-          ) {
+          if (['ENOSPC', 'EDQUOT', 'EACCES', 'EPERM', 'EIO', 'EROFS'].includes(code ?? '')) {
             throw error;
           }
 
           if (sourceFailed) {
-            throw new RetryableDownloadError(
-              "Transfer terputus; partial dipertahankan.",
-              { cause: error },
-            );
+            throw new RetryableDownloadError('Transfer disconnected; partial retained.', { cause: error });
           }
 
           throw error;
@@ -691,24 +631,17 @@ async function performDownload(
 
         const downloadedSize = (await lstat(partialPath)).size;
 
-        if (
-          (responseEnd !== null && downloadedSize > responseEnd + 1) ||
-          (total !== null && downloadedSize > total)
-        ) {
+        if ((responseEnd !== null && downloadedSize > responseEnd + 1) || (total !== null && downloadedSize > total)) {
           forceRestart = true;
 
-          throw new RetryableDownloadError(
-            "Ukuran file melebihi rentang; " + "akan mengunduh ulang.",
-          );
+          throw new RetryableDownloadError('File size exceeds range; ' + 'will re-download.');
         }
 
         if (
           (responseEnd !== null && downloadedSize !== responseEnd + 1) ||
           (total !== null && downloadedSize !== total)
         ) {
-          throw new RetryableDownloadError(
-            "File belum lengkap; " + "akan mencoba melanjutkan.",
-          );
+          throw new RetryableDownloadError('File incomplete; ' + 'will attempt to resume.');
         }
 
         return {
@@ -729,11 +662,7 @@ async function performDownload(
       randomize: true,
 
       onFailedAttempt: ({ error, attemptNumber }) => {
-        progress.retry(
-          `[Download] ${file.name || file.path}: ` +
-            `percobaan ${attemptNumber} gagal — ` +
-            error.message,
-        );
+        progress.retry(`[Download] ${file.name || file.path}: ` + `attempt ${attemptNumber} failed — ` + error.message);
       },
 
       shouldRetry: async ({ error }) => {
@@ -750,21 +679,21 @@ async function performDownload(
     },
   );
 
-  progress.setState("finalisasi");
+  progress.setState('finalizing');
 
   await link(partialPath, destination);
 
   const finalInfo = await lstat(destination);
 
   if (finalInfo.size !== completed.size) {
-    throw new Error(`Ukuran file berubah saat finalisasi: ${destination}`);
+    throw new Error(`File size changed during finalization: ${destination}`);
   }
 
   await unlink(partialPath);
   await removeIfExists(metadataPath);
 
   return {
-    status: "saved",
+    status: 'saved',
     destination,
     manifest: {
       filename: basename(destination),

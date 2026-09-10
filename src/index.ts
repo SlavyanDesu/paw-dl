@@ -1,21 +1,22 @@
-import { parseCli, HELP } from "./cli.ts";
-import { getCreator, getPost, iterateCreatorPosts } from "./api/client.ts";
-import { createQueue } from "./downloader/queue.ts";
-import { downloadPost } from "./downloader/download-post.ts";
-import { acquireLock, releaseLock } from "./lock.ts";
-import type { Target } from "./utils/parse-url.ts";
+import { parseCli, HELP } from './cli.ts';
+import { getCreator, getPost, iterateCreatorPosts } from './api/client.ts';
+import { createQueue } from './downloader/queue.ts';
+import { downloadPost } from './downloader/download-post.ts';
+import { acquireLock, releaseLock } from './lock.ts';
+import { getBanner } from './banner.ts';
+import type { Target } from './utils/parse-url.ts';
 
 function targetToString(target: Target): string {
   const base = `https://pawchive.pw/${target.service}/user/${target.userId}`;
 
-  return target.type === "post" ? `${base}/post/${target.postId}` : base;
+  return target.type === 'post' ? `${base}/post/${target.postId}` : base;
 }
 
 async function release(output: string): Promise<void> {
   try {
     await releaseLock(output);
   } catch {
-    // abaikan
+    // just ignore this
   }
 }
 
@@ -26,6 +27,9 @@ function releaseAndExit(output: string, code: number): void {
 }
 
 async function main(): Promise<void> {
+  console.log(getBanner());
+  console.log();
+
   const options = parseCli();
 
   if (!options) {
@@ -58,12 +62,12 @@ async function main(): Promise<void> {
     await release(output);
   }
 
-  process.on("beforeExit", () => {
+  process.on('beforeExit', () => {
     releaseOnce();
   });
-  process.on("SIGINT", () => releaseAndExit(output, 130));
-  process.on("SIGTERM", () => releaseAndExit(output, 143));
-  process.on("uncaughtException", (error) => {
+  process.on('SIGINT', () => releaseAndExit(output, 130));
+  process.on('SIGTERM', () => releaseAndExit(output, 143));
+  process.on('uncaughtException', (error) => {
     console.error(error);
     releaseAndExit(output, 1);
   });
@@ -79,7 +83,7 @@ async function main(): Promise<void> {
     failedPosts: 0,
   };
 
-  console.log(`Kreator: ${creator.name}`);
+  console.log(`Creator: ${creator.name}`);
   console.log(`Output: ${output}`);
 
   async function processPost(postId: string): Promise<void> {
@@ -115,10 +119,10 @@ async function main(): Promise<void> {
 
   let listingFailed = false;
 
-  if (target.type === "post") {
+  if (target.type === 'post') {
     await processPost(target.postId);
   } else {
-    console.log(`Maksimum iterasi listing: ${iterations}`);
+    console.log(`Maximum iterations list: ${iterations}`);
 
     try {
       for await (const summary of iterateCreatorPosts(target, iterations)) {
@@ -129,19 +133,19 @@ async function main(): Promise<void> {
 
       const message = error instanceof Error ? error.message : String(error);
 
-      console.error(`[Listing kreator] ${message}`);
+      console.error(`[Creator listing] ${message}`);
     }
   }
 
-  console.log("\nHasil:");
-  console.log(`Post diproses: ${totals.posts}`);
-  console.log(`File tersimpan: ${totals.saved}`);
-  console.log(`File dilewati: ${totals.skipped}`);
-  console.log(`File gagal: ${totals.failedFiles}`);
-  console.log(`Post bermasalah: ${totals.failedPosts}`);
+  console.log('\nResult:');
+  console.log(`Processed post(s): ${totals.posts}`);
+  console.log(`Saved file(s): ${totals.saved}`);
+  console.log(`Skipped file(s): ${totals.skipped}`);
+  console.log(`Failed file(s): ${totals.failedFiles}`);
+  console.log(`Failed post(s): ${totals.failedPosts}`);
 
   if (listingFailed) {
-    console.log("Listing terhenti sebelum seluruh iterasi selesai.");
+    console.log('Listing interrupted.');
   }
 
   if (totals.failedPosts > 0 || listingFailed) {
