@@ -43,10 +43,22 @@ export async function finalizeDownload(
   expectedSize: number,
 ): Promise<void> {
   // Crash consistency: manifest writes use sync; file data must be durable too.
-  const syncHandle = await open(partialPath, 'r');
+  // 'r+' not 'r': Windows FlushFileBuffers needs write access on the handle.
+  // Still best-effort below for exotic volumes where even that fails.
+  const syncHandle = await open(partialPath, 'r+');
 
   try {
-    await syncHandle.sync();
+    try {
+      await syncHandle.sync();
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+
+      if (code === 'EPERM' || code === 'EACCES' || code === 'ENOSYS' || code === 'EOPNOTSUPP') {
+        console.warn(`[fsync] skipped durability sync for ${destination}: ${code}`);
+      } else {
+        throw error;
+      }
+    }
   } finally {
     await syncHandle.close();
   }

@@ -50,7 +50,18 @@ export async function atomicWriteJson(filePath: string, data: unknown, options?:
       await handle.writeFile(`${JSON.stringify(data, null, 2)}\n`, 'utf8');
 
       if (options?.sync) {
-        await handle.sync();
+        try {
+          await handle.sync();
+        } catch (error) {
+          const code = (error as NodeJS.ErrnoException).code;
+
+          // Best-effort like finalize: Windows throws EPERM on some volumes.
+          if (code === 'EPERM' || code === 'EACCES' || code === 'ENOSYS' || code === 'EOPNOTSUPP') {
+            console.warn(`[fsync] skipped durability sync for ${filePath}: ${code}`);
+          } else {
+            throw error;
+          }
+        }
       }
     } finally {
       await handle.close();
