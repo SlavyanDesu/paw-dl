@@ -12,7 +12,7 @@ cd paw-dl
 bun install
 ```
 
-If you are planning to use this downloader on Android through Termux, [follow these steps](#run-on-termux)
+If you are planning to use this downloader on Android through Termux, [follow these steps](#run-on-termux).
 
 ## Usage
 
