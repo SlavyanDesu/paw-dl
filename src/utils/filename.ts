@@ -48,6 +48,12 @@ export function createPostNames(
   };
 }
 
+export function createFlatFileStem(user: string, title: string, published: string | null, postId: string): string {
+  const date = formatPostDate(published);
+
+  return `[${date}] ${sanitizeName(user)}-${sanitizeName(title)} [${sanitizeName(postId)}]`;
+}
+
 function extractRawExtension(originalName: string, filePath: string): string | null {
   for (const source of [originalName, filePath]) {
     const cleanSource = source.split(/[?#]/)[0] ?? '';

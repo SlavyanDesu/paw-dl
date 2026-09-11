@@ -42,9 +42,10 @@ bun run start "https://pawchive.pw/<service>/user/<userId>" -o ./downloads --pos
 | `-n, --post <number>`          | Limit the number of posts fetched from a creator. Omit to fetch all posts.       |
 | `--include-files <extensions>` | Include attachments, separated by commas, or use `all`.                          |
 | `-f, --force`                  | Bypass the output directory lock. Does not overwrite files or bypass validation. |
+| `--flat`                       | Creator URLs only: all files into one folder, no per-post folders.               |
 | `-h, --help`                   | Show help.                                                                       |
 
-`--post` only works with creator URLs. Images and videos are included by default.  
+`--post` and `--flat` only work with creator URLs. Images and videos are included by default.  
 Use `--include-files all` to include every available attachment type.
 
 Posts are processed one at a time, with up to three files downloading concurrently.
@@ -60,6 +61,15 @@ downloads/
     .manifest.json
     Creator-Post title-001.jpg
     Creator-Post title-002.mp4
+```
+
+With `--flat`, creator files land directly in the output folder instead, named `[YYYYMMDD] <creator>-<title> [<postId>]-<number>.<ext>` with one root `.manifest.json`:
+
+```text
+downloads/
+  .manifest.json
+  [20260102] Creator-Post title [456]-001.jpg
+  [20260102] Creator-Post title [457]-001.png
 ```
 
 ## Run on Termux

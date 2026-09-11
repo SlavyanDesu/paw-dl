@@ -13,3 +13,9 @@ test('--post reaches the options as postCount', () => {
 test('--post is rejected on post URLs', () => {
   expect(() => parseCli([POST, '-n', '5'])).toThrow('--post only works on creator URLs.');
 });
+
+test('--flat reaches the options and is rejected on post URLs', () => {
+  expect(parseCli([CREATOR, '--flat'])?.flat).toBe(true);
+  expect(parseCli([CREATOR])?.flat).toBe(false);
+  expect(() => parseCli([POST, '--flat'])).toThrow('--flat only works on creator URLs.');
+});

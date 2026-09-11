@@ -8,6 +8,7 @@ export type CliOptions = {
   postCount: number | undefined;
   includeFiles: string[];
   force: boolean;
+  flat: boolean;
 };
 
 export const HELP = `Usage: paw-dl [options] <url>
@@ -22,6 +23,7 @@ Options:
   -n, --post <number>                Limit the number of posts fetched from a creator. Omit to fetch all posts.
   --include-files <extensions>       Include attachments, separated by commas: zip,psd,pdf or all
   -f, --force                        Bypass the output directory lock. Does not overwrite files or bypass validation.
+  --flat                             Download all creator files into one folder, no per-post folders.
   -h, --help                         Show help.
 `;
 
@@ -55,6 +57,7 @@ export function parseCli(args: string[] = Bun.argv.slice(2)): CliOptions | null 
     post?: string;
     'include-files'?: string;
     force?: boolean;
+    flat?: boolean;
     help?: boolean;
   };
   let positionals: string[];
@@ -69,6 +72,7 @@ export function parseCli(args: string[] = Bun.argv.slice(2)): CliOptions | null 
         post: { type: 'string', short: 'n' },
         'include-files': { type: 'string' },
         force: { type: 'boolean', short: 'f', default: false },
+        flat: { type: 'boolean', default: false },
         help: { type: 'boolean', short: 'h', default: false },
       },
     }));
@@ -92,6 +96,10 @@ export function parseCli(args: string[] = Bun.argv.slice(2)): CliOptions | null 
     throw new Error('--post only works on creator URLs.');
   }
 
+  if (target.type === 'post' && values.flat) {
+    throw new Error('--flat only works on creator URLs.');
+  }
+
   const output = values.output?.trim() ? resolve(values.output) : process.cwd();
 
   return {
@@ -100,5 +108,6 @@ export function parseCli(args: string[] = Bun.argv.slice(2)): CliOptions | null 
     postCount: values.post === undefined ? undefined : parsePostCount(values.post),
     includeFiles: values['include-files'] === undefined ? [] : parseIncludeFiles(values['include-files']),
     force: values.force ?? false,
+    flat: values.flat ?? false,
   };
 }
