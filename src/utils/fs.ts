@@ -29,7 +29,7 @@ export async function isExistingFile(path: string): Promise<boolean> {
 }
 
 export async function atomicWriteJson(filePath: string, data: unknown, options?: { sync?: boolean }): Promise<void> {
-  // Single writer per path: fixed tmp name plus exclusive create is enough.
+  // One writer per path, so a fixed tmp name plus exclusive create is safe.
   const temporaryPath = `${filePath}.tmp`;
 
   let handle: Awaited<ReturnType<typeof open>>;
@@ -40,7 +40,7 @@ export async function atomicWriteJson(filePath: string, data: unknown, options?:
       throw error;
     }
 
-    // Leftover from a crashed run; sweepOrphanTempFiles normally clears these.
+    // Leftover from a crashed run; the post runner usually sweeps these first.
     await removeIfExists(temporaryPath);
     handle = await open(temporaryPath, 'wx');
   }
@@ -55,7 +55,7 @@ export async function atomicWriteJson(filePath: string, data: unknown, options?:
         } catch (error) {
           const code = (error as NodeJS.ErrnoException).code;
 
-          // Best-effort like finalize: Windows throws EPERM on some volumes.
+          // Flushing is only a hint; on volumes that refuse it, warn and go on.
           if (code === 'EPERM' || code === 'EACCES' || code === 'ENOSYS' || code === 'EOPNOTSUPP') {
             console.warn(`[fsync] skipped durability sync for ${filePath}: ${code}`);
           } else {

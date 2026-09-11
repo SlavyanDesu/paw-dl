@@ -20,8 +20,8 @@ export async function streamToFile(
 ): Promise<number> {
   const source = Readable.fromWeb(response.body!);
 
-  // Narrow TOCTOU: reject swapped-in symlink right before open.
-  // Local-writer race remains; open uses best-effort regular-file check.
+  // Recheck right before opening: catches a link swapped in after the first check.
+  // A local writer racing this exact moment still wins; that threat is accepted.
   await isExistingFile(partialPath).catch((error) => {
     if (error instanceof Error && error.message.startsWith('Path already exists')) {
       throw error;
@@ -57,8 +57,8 @@ export async function streamToFile(
       throw error;
     }
 
-    // Anything else mid-transfer (dropped connection, reset stream) keeps a
-    // usable partial, so retrying from the recorded offset is safe.
+    // Anything else mid-transfer (dropped connection, reset stream) leaves a
+    // usable partial behind, so the next attempt can resume from it.
     throw new RetryableError('Transfer disconnected; partial retained.', { cause: error });
   }
 

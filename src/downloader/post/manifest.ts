@@ -6,9 +6,8 @@ import { z } from 'zod';
 import { FILE_ORIGIN } from '../../utils/attachment-url.ts';
 
 const ManifestEntrySchema = z.object({
-  // No separators or parent refs: loaded names must stay inside the post folder.
-  // Backslash also rejected: safe on Linux but escapes on Windows.
-  // Control chars rejected: they break logs and fail closed at open time.
+  // Loaded names must stay inside the post folder: no separators, no parent
+  // refs, no backslashes (harmless on Linux, an escape on Windows), no controls.
   filename: z
     .string()
     .min(1)
@@ -19,7 +18,6 @@ const ManifestEntrySchema = z.object({
         name !== '..' &&
         !name.includes('/') &&
         !name.includes('\\') &&
-        // ponytail: manual guard cheaper than zod for closed-world file
         !/[\u0000-\u001F\u007F]/.test(name),
       'Unsafe filename in manifest.',
     ),
@@ -91,8 +89,8 @@ export async function sweepOrphanTempFiles(directory: string): Promise<void> {
   }
 
   for (const entry of entries) {
-    // Only atomicWriteJson leftovers: manifest / resume metadata tmp files.
-    // Never touch .part resume data here.
+    // Only our own leftovers: manifest and resume-metadata tmp files.
+    // Partial downloads are resume data; never delete those here.
     const isManifestTmp = entry === '.manifest.json.tmp';
     const isResumeTmp = entry.endsWith('.part.json.tmp');
 
@@ -100,7 +98,7 @@ export async function sweepOrphanTempFiles(directory: string): Promise<void> {
       try {
         await unlink(join(directory, entry));
       } catch {
-        // Best-effort cleanup; download proceeds regardless.
+        // Cleanup is optional; the download goes on regardless.
       }
     }
   }

@@ -79,8 +79,8 @@ export async function downloadPost(options: DownloadPostOptions): Promise<PostDo
 
   console.log(`[Post ${post.id}] ${post.title}: ` + `${jobs.length} file`);
 
-  // Save progress after each file, so a crash keeps completed downloads recorded.
-  // .catch clears prior rejection so one failed write never poisons later files.
+  // Record each save right away, so a crash keeps finished files.
+  // A failed save must not block the saves after it.
   let persist: Promise<void> = Promise.resolve();
 
   const results = await queue.run(
@@ -99,7 +99,7 @@ export async function downloadPost(options: DownloadPostOptions): Promise<PostDo
     }),
   );
 
-  // Per-file failures already recorded above; never throw here on persist.
+  // Failures are already counted per file above; a bad final save must not throw here.
   await persist.catch(() => {});
 
   for (const [index, result] of results.entries()) {

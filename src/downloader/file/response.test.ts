@@ -80,8 +80,9 @@ test('206 without resume context aborts', () => {
   expect(outcome).toEqual({ kind: 'abort', message: 'Server sent 206 without a resume request.' });
 });
 
-test('200 after resume request plans fresh download', () => {
-  // Live servers answer 200 when If-Range misses; stream truncates via flag w.
+test('200 after resume request plans a fresh download', () => {
+  // Live servers answer 200 when the resume tag no longer matches;
+  // the writer then overwrites the stale partial from the start.
   const outcome = interpretResponse(response(200, { 'Content-Length': String(TOTAL), ETag: ETAG }), resumeContext());
 
   expect(outcome).toEqual({

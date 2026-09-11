@@ -20,8 +20,9 @@ type RetryOptions = {
 };
 
 /*
- * Shared backoff: retryable errors honor Retry-After timestamps,
- * everything else fails fast. Used by API client and file download.
+ * One backoff loop for the whole app. Errors marked retryable wait out
+ * their Retry-After timestamp; anything else fails on the first attempt.
+ * Used by the API client and the file downloader.
  */
 export async function retryWithBackoff<T>(
   task: (attemptNumber: number) => Promise<T>,

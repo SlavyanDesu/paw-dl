@@ -96,8 +96,8 @@ test('completed files stay recorded when a sibling file fails', async () => {
     expect(result.saved).toBe(1);
     expect(result.failures).toHaveLength(1);
 
-    // The good file was written to the manifest as it finished, not at the end,
-    // so a crash after it would still leave it recorded.
+    // The good file hits the manifest the moment it finishes, so even a
+    // crash right after still leaves it recorded.
     const manifest = JSON.parse(await readFile(join(result.directory!, '.manifest.json'), 'utf8')) as {
       files: Record<string, { filename: string; size: number }>;
     };

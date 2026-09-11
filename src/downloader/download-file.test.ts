@@ -27,7 +27,7 @@ test('downloads, resumes an interrupted transfer, and reuses recorded files', as
     if (interrupt) {
       interrupt = false;
       response.write(body.subarray(0, 8));
-      // Let the first bytes reach disk before dropping the connection.
+      // Pause before killing the connection, so the first bytes hit the disk.
       setTimeout(() => response.destroy(), 50);
     } else {
       response.end(body.subarray(offset));
@@ -42,7 +42,7 @@ test('downloads, resumes an interrupted transfer, and reuses recorded files', as
     const address = server.address();
     if (!address || typeof address === 'string') throw new Error('Expected a local TCP server.');
 
-    // Keep production URL checks intact; route only the transport to our local server.
+    // Route downloads to the local server, but keep the production URL checks.
     fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(
       Object.assign(
         (input: Parameters<typeof fetch>[0], options?: Parameters<typeof fetch>[1]) => {
@@ -76,7 +76,7 @@ test('downloads, resumes an interrupted transfer, and reuses recorded files', as
 
     interrupt = true;
     const resumedPath = join(directory, 'resumed.jpg');
-    // The dropped connection retries in the same call and resumes from byte 8.
+    // A dropped connection retries in the same call, resuming from byte 8.
     expect((await downloadFile(file, resumedPath)).status).toBe('saved');
     expect(requests.at(-1)).toEqual({ range: 'bytes=8-', ifRange: etag });
     expect(await readFile(resumedPath)).toEqual(body);

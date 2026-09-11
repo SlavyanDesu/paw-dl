@@ -22,8 +22,8 @@ function postDetail(id: string, filePath: string) {
 const JPEG = Buffer.from('flat fixture body');
 
 /*
- * One loopback serves both origins: API JSON and file bytes.
- * Same rewrite trick as the other offline suites.
+ * One local server plays both roles: API JSON and file bytes.
+ * Downloads get redirected to it, exactly like the other offline suites.
  */
 async function withRoutes<T>(run: () => Promise<T>): Promise<T> {
   const server = createServer((request, response) => {
@@ -101,7 +101,7 @@ test('flat lands same-title posts in one folder with post IDs', async () => {
       expect(first.saved).toBe(2);
       expect(first.failures).toEqual([]);
 
-      // No per-post folders: files plus root manifest only.
+      // Everything sits in the output root: files plus one manifest.
       expect((await readdir(directory)).sort()).toEqual(
         ['.manifest.json', '[20260102] Creator-Post [1]-001.jpg', '[20260102] Creator-Post [2]-001.jpg'].sort(),
       );

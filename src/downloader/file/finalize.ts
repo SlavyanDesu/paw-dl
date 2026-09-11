@@ -42,8 +42,8 @@ export async function finalizeDownload(
   metadataPath: string,
   expectedSize: number,
 ): Promise<void> {
-  // Crash consistency: manifest writes use sync; file data must be durable too.
-  // 'r+' not 'r': Windows FlushFileBuffers needs write access on the handle.
+  // Flush file data so a crash can't leave a durable manifest pointing at lost bytes.
+  // 'r+' not 'r': Windows only flushes handles opened for writing.
   // Still best-effort below for exotic volumes where even that fails.
   const syncHandle = await open(partialPath, 'r+');
 
@@ -69,9 +69,8 @@ export async function finalizeDownload(
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
 
-    // Some setups have no hard links: bun-termux stubs linkat() with EXDEV,
-    // Android shared storage doesn't support them either.
-    // Same directory, so copy with EXCL still refuses to overwrite atomically.
+    // Termux and Android storage have no hard links; copy instead.
+    // EXCL keeps the no-overwrite promise: copy fails if the target exists.
     if (code === 'EXDEV' || code === 'EACCES' || code === 'EPERM' || code === 'EOPNOTSUPP' || code === 'ENOSYS') {
       await copyFile(partialPath, destination, fsConstants.COPYFILE_EXCL);
     } else {

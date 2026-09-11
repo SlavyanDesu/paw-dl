@@ -7,8 +7,8 @@ import { join } from 'node:path';
 import { downloadFile } from './download-file.ts';
 
 /*
- * Mock mirrors live file server: strong ETag, accept-ranges,
- * 200 on If-Range miss, 206 on hit, 416 past the end.
+ * Pretends to be the live file server: strong ETag, range support,
+ * full download when If-Range misses, 416 past the end of the file.
  */
 function startServer(body: string, etag: string) {
   return createServer((request, response) => {
@@ -84,7 +84,7 @@ test('If-Range miss restarts from zero and truncates stale partial', async () =>
       const file = { path: '/photo.jpg', name: 'photo.jpg', deferred: false };
       const destination = join(directory, 'photo.jpg');
 
-      // Stale partial from an older version with a matching-size lie.
+      // A leftover partial from an older file version.
       await writeFile(`${destination}.part`, 'stale partial data here!');
       await writeFile(
         `${destination}.part.json`,
@@ -112,7 +112,7 @@ test('416 recovers with full download', async () => {
       const file = { path: '/photo.jpg', name: 'photo.jpg', deferred: false };
       const destination = join(directory, 'photo.jpg');
 
-      // Partial offset past the real end, metadata still claims room.
+      // Partial starts past the real end of the file; metadata disagrees.
       await writeFile(`${destination}.part`, 'x'.repeat(50));
       await writeFile(
         `${destination}.part.json`,

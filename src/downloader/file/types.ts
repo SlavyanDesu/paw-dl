@@ -1,5 +1,5 @@
 export const DOWNLOAD_TIMEOUT_MS = 30 * 60_000;
-// ponytail: global cap, per-server limits if legit large files appear
+// Single ceiling for every file: aborts runaway or infinite responses.
 export const MAX_FILE_BYTES = 10 * 1024 * 1024 * 1024;
 
 export type FileManifestEntry = {

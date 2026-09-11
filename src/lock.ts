@@ -59,8 +59,8 @@ async function readLock(lockPath: string): Promise<LockData | null> {
 
   const data = tryParseJson(text);
 
-  // A corrupt file is usually a half-written lock from a crashed process.
-  // Return null so the caller waits, rereads, and only then treats it as stale.
+  // A half-written lock means its writer crashed. Treat as missing so the
+  // caller waits, rereads, and only then clears it as stale.
   return isLockData(data) ? data : null;
 }
 
@@ -76,7 +76,7 @@ async function createLockFile(lockPath: string, data: LockData): Promise<boolean
   let handle: Awaited<ReturnType<typeof open>> | null = null;
 
   try {
-    // Exclusive create: the filesystem decides the winner, not our read check.
+    // Exclusive create: only one process can win; losers get EEXIST.
     handle = await open(lockPath, 'wx');
     await handle.writeFile(`${JSON.stringify(data, null, 2)}\n`, 'utf8');
     return true;
@@ -112,8 +112,7 @@ export async function acquireLock(output: string, target: string, force = false)
     const existing = await readLock(lockPath);
 
     if (!existing) {
-      // Deleted between our attempt and read, or still being written. Wait and
-      // reread; a file that stays unreadable is a crashed writer's leftover.
+      // Vanished or still being written. Wait, reread, then clear leftovers.
       await Bun.sleep(LOCK_RETRY_DELAY_MS);
 
       if (await readLock(lockPath)) {
@@ -128,8 +127,8 @@ export async function acquireLock(output: string, target: string, force = false)
       throw new Error(`Output is currently locked (PID ${existing.pid}). ` + 'Use --force to bypass.');
     }
 
-    // Stale lock (or --force): remove it, then loop back to the exclusive create.
-    // If another process wins the race, our next create returns false and we recheck.
+    // Stale lock (or --force): delete it and retry the exclusive create.
+    // A rival winning in between just makes our next create fail again.
     await removeIfExists(lockPath);
   }
 

@@ -36,7 +36,7 @@ type DownloadFlatOptions = {
 };
 
 /*
- * Flat mode: every post's files land directly in the output folder.
+ * Every post's files land directly in the output folder.
  * Stems carry date + post ID, so same-title posts never collide.
  */
 export async function downloadFlat(options: DownloadFlatOptions): Promise<FlatDownloadResult> {
@@ -89,7 +89,6 @@ export async function downloadFlat(options: DownloadFlatOptions): Promise<FlatDo
 
       let planned;
       try {
-        // Post ID in stem keeps same-title posts apart across the shared folder.
         planned = createJobs(
           files,
           output,
@@ -116,8 +115,8 @@ export async function downloadFlat(options: DownloadFlatOptions): Promise<FlatDo
 
   console.log(`[Flat] ${jobs.length} file(s) into ${output}`);
 
-  // Save progress after each file, so a crash keeps completed downloads recorded.
-  // .catch clears prior rejection so one failed write never poisons later files.
+  // Record each save right away, so a crash keeps finished files.
+  // A failed save must not block the saves after it.
   let persist: Promise<void> = Promise.resolve();
 
   const results = await queue.run(
@@ -136,7 +135,7 @@ export async function downloadFlat(options: DownloadFlatOptions): Promise<FlatDo
     }),
   );
 
-  // Per-file failures already recorded below; never throw here on persist.
+  // Failures are already counted per file below; a bad final save must not throw here.
   await persist.catch(() => {});
 
   for (const [index, result] of results.entries()) {

@@ -158,7 +158,7 @@ async function downloadAll(options: DownloadAllOptions): Promise<{ totals: Total
   let listingFailed = false;
 
   try {
-    // Finish each post before starting the next; its files still download concurrently.
+    // Posts run one at a time; files inside a post download concurrently.
     for await (const summary of iterateCreatorPosts(target, postCount)) {
       await processPost(summary.id);
     }

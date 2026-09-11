@@ -107,7 +107,7 @@ export function createJobs(
     try {
       source = sourceIdentity(createFileUrl(file));
     } catch (error) {
-      // One malformed API record must not doom sibling good files.
+      // A bad record fails only its own file, never the whole post.
       jobFailures.push({
         destination: join(directory, file.name || file.path || 'unknown'),
         error,
@@ -121,7 +121,7 @@ export function createJobs(
     if (existing) {
       const destination = join(directory, existing.filename);
 
-      // Belt and suspenders with the schema check above; never write outside the post folder.
+      // Recheck against the schema: manifest names must never escape the folder.
       if (basename(destination) !== existing.filename) {
         throw new Error(`Manifest filename escapes post folder: ${existing.filename}`);
       }
