@@ -1,9 +1,9 @@
 import { parseCli, HELP } from './cli.ts';
 import { getCreator, getPost, iterateCreatorPosts } from './api/client.ts';
-import { createQueue } from './downloader/queue.ts';
-import { downloadPost } from './downloader/download-post.ts';
+import { createQueue, DEFAULT_CONCURRENCY } from './downloader/queue.ts';
+import { downloadPost } from './downloader/post/download-post.ts';
 import { acquireLock, releaseLock } from './lock.ts';
-import { DEFAULT_CONCURRENCY, errorMessage } from './utils/http.ts';
+import { errorMessage } from './utils/http.ts';
 import type { Target } from './utils/parse-url.ts';
 
 const BANNER = `                           _ _
@@ -173,26 +173,28 @@ async function main(): Promise<void> {
 
   const releaseOnce = setupSignalHandlers(output);
 
-  const creator = await getCreator(target);
+  try {
+    const creator = await getCreator(target);
 
-  console.log(`Creator: ${creator.name}`);
-  console.log(`Output: ${output}`);
+    console.log(`Creator: ${creator.name}`);
+    console.log(`Output: ${output}`);
 
-  const { totals, listingFailed } = await downloadAll({
-    target,
-    creatorName: creator.name,
-    output,
-    postCount,
-    includeFiles,
-  });
+    const { totals, listingFailed } = await downloadAll({
+      target,
+      creatorName: creator.name,
+      output,
+      postCount,
+      includeFiles,
+    });
 
-  printSummary(totals, listingFailed);
+    printSummary(totals, listingFailed);
 
-  if (totals.failedPosts > 0 || listingFailed) {
-    process.exitCode = 1;
+    if (totals.failedPosts > 0 || listingFailed) {
+      process.exitCode = 1;
+    }
+  } finally {
+    await releaseOnce();
   }
-
-  await releaseOnce();
 }
 
 main().catch((error: unknown) => {

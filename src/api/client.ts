@@ -1,22 +1,27 @@
 import { parseCreator, parsePost, parsePostList, type Creator, type Post, type PostSummary } from './schemas.ts';
-import pRetry, { AbortError } from 'p-retry';
 
 import { NETWORK_ERROR_CODES, RETRYABLE_STATUS, parseRetryAfterToTimestamp } from '../utils/http.ts';
+import { RetryableError, retryWithBackoff } from '../utils/retry.ts';
 
 const API_BASE_URL = 'https://pawchive.pw/api/v1';
 
 const PAGE_SIZE = 50;
 const REQUEST_TIMEOUT_MS = 30_000;
-const MAX_RETRY_WAIT_SLEEP_MS = 60_000;
 
-class RetryableHttpError extends Error {
-  readonly retryAt: number;
-
+class RetryableHttpError extends RetryableError {
   constructor(status: number, path: string, retryAt: number) {
     super(`API failed: HTTP ${status} — ${path}`);
     this.name = 'RetryableHttpError';
     this.retryAt = retryAt;
   }
+}
+
+function isTransientRequestError(error: unknown): boolean {
+  return (
+    (error as Error).name === 'TimeoutError' ||
+    error instanceof TypeError ||
+    NETWORK_ERROR_CODES.has(String((error as Error & { code?: string }).code ?? ''))
+  );
 }
 
 export type CreatorRef = {
@@ -38,14 +43,24 @@ async function requestJson(path: string, query: Record<string, string> = {}): Pr
     url.searchParams.set(key, value);
   }
 
-  return pRetry(
+  return retryWithBackoff(
     async (): Promise<unknown> => {
-      const response = await fetch(url, {
-        headers: {
-          Accept: 'application/json',
-        },
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      });
+      let response: Response;
+
+      try {
+        response = await fetch(url, {
+          headers: {
+            Accept: 'application/json',
+          },
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        });
+      } catch (error) {
+        if (isTransientRequestError(error)) {
+          throw new RetryableError('API request failed.', { cause: error });
+        }
+
+        throw error;
+      }
 
       if (!response.ok) {
         const retryAfter = response.headers.get('retry-after');
@@ -56,7 +71,7 @@ async function requestJson(path: string, query: Record<string, string> = {}): Pr
           throw new RetryableHttpError(response.status, url.pathname, parseRetryAfterToTimestamp(retryAfter));
         }
 
-        throw new AbortError(`API failed: HTTP ${response.status} — ${url.pathname}`);
+        throw new Error(`API failed: HTTP ${response.status} — ${url.pathname}`);
       }
 
       const contentType = response.headers.get('content-type') ?? '';
@@ -64,7 +79,7 @@ async function requestJson(path: string, query: Record<string, string> = {}): Pr
       if (!contentType.toLowerCase().includes('json')) {
         await response.body?.cancel();
 
-        throw new AbortError(`API did not send JSON — ${url.pathname}`);
+        throw new Error(`API did not send JSON — ${url.pathname}`);
       }
 
       try {
@@ -72,39 +87,19 @@ async function requestJson(path: string, query: Record<string, string> = {}): Pr
         return data;
       } catch (error) {
         if (error instanceof SyntaxError) {
-          throw new AbortError('API sent invalid JSON.');
+          throw new Error('API sent invalid JSON.');
+        }
+
+        if (isTransientRequestError(error)) {
+          throw new RetryableError('API request failed.', { cause: error });
         }
 
         throw error;
       }
     },
     {
-      retries: 3,
-      factor: 2,
-      minTimeout: 1_000,
-      maxTimeout: 10_000,
-      randomize: true,
-
-      onFailedAttempt: ({ error, attemptNumber }) => {
+      onFailedAttempt: (error, attemptNumber) => {
         console.warn(`[API] Attempt ${attemptNumber} failed: ${error.message}`);
-      },
-
-      shouldRetry: async ({ error }) => {
-        if (error instanceof RetryableHttpError) {
-          while (Date.now() < error.retryAt) {
-            const remaining = error.retryAt - Date.now();
-            await Bun.sleep(Math.min(remaining, MAX_RETRY_WAIT_SLEEP_MS));
-          }
-
-          return true;
-        }
-
-        // Timeout error
-        return (
-          error.name === 'TimeoutError' ||
-          error instanceof TypeError ||
-          NETWORK_ERROR_CODES.has(String((error as Error & { code?: string }).code ?? ''))
-        );
       },
     },
   );

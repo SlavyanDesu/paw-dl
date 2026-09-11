@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { downloadPost } from './download-post.ts';
+import { downloadPost } from './post/download-post.ts';
 import { createQueue } from './queue.ts';
 import type { Attachment } from '../api/schemas.ts';
 

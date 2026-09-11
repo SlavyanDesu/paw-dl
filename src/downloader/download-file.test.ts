@@ -4,8 +4,8 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { downloadFile } from './download-file.ts';
-import { downloadPost } from './download-post.ts';
+import { downloadFile } from './file/download-file.ts';
+import { downloadPost } from './post/download-post.ts';
 import { createQueue } from './queue.ts';
 
 test('downloads, resumes an interrupted transfer, and reuses recorded files', async () => {
