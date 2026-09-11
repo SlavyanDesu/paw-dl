@@ -31,7 +31,7 @@ export function formatPostDate(published: string | null): string {
     throw new Error(`The published date is invalid: ${isoDate}`);
   }
 
-  return `${day}${month}${year}`;
+  return `${year}${month}${day}`;
 }
 
 export function createPostNames(
@@ -46,6 +46,20 @@ export function createPostNames(
     folderName: `[${date}] ${fileStem}`,
     fileStem,
   };
+}
+
+export function getAttachmentExtension(originalName: string, filePath: string): string {
+  for (const source of [originalName, filePath]) {
+    const cleanSource = source.split(/[?#]/)[0] ?? '';
+
+    const extension = extname(cleanSource).slice(1).toLowerCase();
+
+    if (/^[a-z0-9]{1,10}$/.test(extension)) {
+      return extension;
+    }
+  }
+
+  return '';
 }
 
 function getExtension(originalName: string, filePath: string): string {

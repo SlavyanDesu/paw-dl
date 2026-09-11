@@ -29,7 +29,7 @@ Bun CLI app that downloads posts/files from pawchive.pw (`https://pawchive.pw/{s
 
 ## Download state
 
-- Post folders are `<output>/[DDMMYYYY] <user>-<title>/`; `src/utils/filename.ts` rejects missing/invalid published dates rather than inventing a fallback.
+- Post folders are `<output>/[YYYYMMDD] <user>-<title>/`; `src/utils/filename.ts` rejects missing/invalid published dates rather than inventing a fallback.
 - `.post-id` identifies the service/user/post for folder reuse; `.manifest.json` maps source URLs to stable filenames, sizes and ETags. Keep these with downloaded files: an existing final file without a matching manifest entry is an error, not a skip. Manifest filenames are validated to stay inside the post folder, and each saved file is recorded immediately so interrupted runs keep completed files.
 - `src/downloader/download-file.ts` resumes from `.part` + `.part.json` only with matching source metadata and a strong ETag. Finalization hard-links the partial to the final name without overwriting; when hard links are unavailable (bun-termux stubs `linkat()` with `EXDEV`, Android shared storage lacks them) it falls back to a same-directory rename after rechecking the destination is absent. Fallback triggers on EXDEV/EPERM/EOPNOTSUPP/ENOSYS/EACCES (EACCES observed on Termux, where the real link syscall is denied). The `EXDEV` branch can't trigger on Linux CI — the EEXIST safety path is what's tested.
 - `src/lock.ts` stores a PID lock at `<output>/.paw-dl.lock`; dead-PID locks are reclaimed. `--force` bypasses this lock, not file/manifest validation. `src/index.ts` handles lock release on signals and uncaught exceptions.

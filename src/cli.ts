@@ -12,7 +12,6 @@ export type CliOptions = {
 
 type ParsedFlags = {
   output?: string | true;
-  // Commander names this after the long flag (--post), not our internal name.
   post?: number;
   includeFiles?: string[];
   force: boolean;
@@ -47,15 +46,19 @@ function createProgram(): Command {
     .name('paw-dl')
     .description('Pawchive downloader.')
     .argument('<url>', 'Creator or post URL')
-    .option('-o, --output [folder]', 'Output folder (default: cwd)')
-    .option('-n, --post <number>', 'Number of posts to fetch (default: fetch all posts)', parsePostCount)
+    .option('-o, --output [folder]', 'Output dir. Default: current working directory.')
+    .option(
+      '-n, --post <number>',
+      'Limit the number of posts fetched from a creator. Omit to fetch all posts.',
+      parsePostCount,
+    )
     .option(
       '--include-files <extensions>',
-      'Include files other than images and video: zip,psd,pdf or "all"',
+      'Include attachments, separated by commas: zip,psd,pdf or all',
       parseIncludeFiles,
     )
-    .option('-f, --force', 'Ignore the output key if it is already locked')
-    .helpOption('-h, --help', 'Show list options')
+    .option('-f, --force', 'Bypass the output directory lock. Does not overwrite files or bypass validation.')
+    .helpOption('-h, --help', 'Show help.')
     .allowExcessArguments(false)
     .exitOverride()
     .configureOutput({
@@ -92,7 +95,7 @@ export function parseCli(args: string[] = Bun.argv.slice(2)): CliOptions | null 
   const options = program.opts<ParsedFlags>();
 
   if (target.type === 'post' && program.getOptionValueSource('post') === 'cli') {
-    throw new Error('--post only works on creator URL.');
+    throw new Error('--post only works on creator URLs.');
   }
 
   const output = typeof options.output === 'string' && options.output.trim() ? resolve(options.output) : process.cwd();

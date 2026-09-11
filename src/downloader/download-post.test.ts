@@ -23,7 +23,7 @@ test('a manifest filename outside the post folder is rejected', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'paw-dl-post-'));
 
   try {
-    const folder = join(directory, '[02012026] Creator-Post');
+    const folder = join(directory, '[20260102] Creator-Post');
     await mkdir(folder, { recursive: true });
     await writeFile(join(folder, '.post-id'), JSON.stringify(['example', '123', '456']));
     await writeFile(

@@ -3,9 +3,14 @@ import { getCreator, getPost, iterateCreatorPosts } from './api/client.ts';
 import { createQueue } from './downloader/queue.ts';
 import { downloadPost } from './downloader/download-post.ts';
 import { acquireLock, releaseLock } from './lock.ts';
-import { BANNER } from './banner.ts';
 import { DEFAULT_CONCURRENCY, errorMessage } from './utils/http.ts';
 import type { Target } from './utils/parse-url.ts';
+
+const BANNER = `                           _ _
+  _ __  __ ___ __ _____ __| | |
+  | '_ \\/ _\` \\ V  V /___/ _\` | |
+  | .__/\\__,_|\\_/\\_/    \\__,_|_|
+  |_|`;
 
 const EXIT_SIGINT = 130;
 const EXIT_SIGTERM = 143;

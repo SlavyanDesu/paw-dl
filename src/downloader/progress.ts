@@ -4,7 +4,6 @@ import cliProgress from 'cli-progress';
 
 const INITIAL_STATE = { percent: '--', size: '0 B / ?', speed: '--', etaText: '--', state: 'waiting' };
 
-// ponytail: one shared display per process; pass a display in if concurrent runs need separate output.
 let progressGroup: cliProgress.MultiBar | undefined;
 let activeProgressBars = 0;
 

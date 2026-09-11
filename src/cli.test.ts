@@ -11,5 +11,5 @@ test('--post reaches the options as postCount', () => {
 });
 
 test('--post is rejected on post URLs', () => {
-  expect(() => parseCli([POST, '-n', '5'])).toThrow('--post only works on creator URL.');
+  expect(() => parseCli([POST, '-n', '5'])).toThrow('--post only works on creator URLs.');
 });

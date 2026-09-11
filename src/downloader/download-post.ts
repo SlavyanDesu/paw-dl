@@ -1,12 +1,12 @@
 import { lstat, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { basename, extname, join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import { z } from 'zod';
 
 import type { Attachment, Post } from '../api/schemas.ts';
 import type { CreatorRef } from '../api/client.ts';
 
-import { createFileName, createPostNames, sanitizeName } from '../utils/filename.ts';
+import { createFileName, createPostNames, getAttachmentExtension, sanitizeName } from '../utils/filename.ts';
 import { atomicWriteJson } from '../utils/fs.ts';
 import { createFileUrl, sourceIdentity } from '../utils/attachment-url.ts';
 
@@ -99,20 +99,6 @@ type DownloadJob = {
  * Attachment filtering
  */
 
-function getFileExtension(file: Attachment): string {
-  for (const source of [file.name, file.path]) {
-    const cleanSource = source.split(/[?#]/)[0] ?? '';
-
-    const extension = extname(cleanSource).slice(1).toLowerCase();
-
-    if (/^[a-z0-9]{1,10}$/.test(extension)) {
-      return extension;
-    }
-  }
-
-  return '';
-}
-
 function collectFiles(post: Post, includeFiles: string[]): Attachment[] {
   const candidates = [post.file, ...post.attachments];
 
@@ -128,7 +114,7 @@ function collectFiles(post: Post, includeFiles: string[]): Attachment[] {
       continue;
     }
 
-    const extension = getFileExtension(file);
+    const extension = getAttachmentExtension(file.name, file.path);
 
     const allowed = includeAll || MEDIA_EXTENSIONS.has(extension) || additionalExtensions.has(extension);
 
