@@ -13,7 +13,7 @@ export type CliOptions = {
 
 export const HELP = `Usage: paw-dl [options] <url>
 
-Pawchive downloader.
+A Pawchive downloader.
 
 Arguments:
   url                                Creator or post URL
