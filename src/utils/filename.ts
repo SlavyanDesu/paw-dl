@@ -48,23 +48,10 @@ export function createPostNames(
   };
 }
 
-export function getAttachmentExtension(originalName: string, filePath: string): string {
+function extractRawExtension(originalName: string, filePath: string): string | null {
   for (const source of [originalName, filePath]) {
     const cleanSource = source.split(/[?#]/)[0] ?? '';
 
-    const extension = extname(cleanSource).slice(1).toLowerCase();
-
-    if (/^[a-z0-9]{1,10}$/.test(extension)) {
-      return extension;
-    }
-  }
-
-  return '';
-}
-
-function getExtension(originalName: string, filePath: string): string {
-  for (const source of [originalName, filePath]) {
-    const cleanSource = source.split(/[?#]/)[0] ?? '';
     const extension = extname(cleanSource);
 
     if (/^\.[a-zA-Z0-9]{1,10}$/.test(extension)) {
@@ -72,7 +59,23 @@ function getExtension(originalName: string, filePath: string): string {
     }
   }
 
-  return '.bin';
+  return null;
+}
+
+export function getAttachmentExtension(originalName: string, filePath: string): string {
+  const extension = extractRawExtension(originalName, filePath);
+
+  if (!extension) {
+    return '';
+  }
+
+  const lowered = extension.slice(1).toLowerCase();
+
+  return /^[a-z0-9]{1,10}$/.test(lowered) ? lowered : '';
+}
+
+function getExtension(originalName: string, filePath: string): string {
+  return extractRawExtension(originalName, filePath) ?? '.bin';
 }
 
 export function createFileName(fileStem: string, originalName: string, filePath: string, order: number): string {

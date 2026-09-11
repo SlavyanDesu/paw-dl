@@ -1,5 +1,6 @@
 import type { Attachment } from '../api/schemas.ts';
-import { FILE_ORIGIN } from './http.ts';
+
+export const FILE_ORIGIN = 'https://file.pawchive.pw';
 
 export function createFileUrl(file: Attachment): URL {
   if (!file.path.startsWith('/') || file.path.startsWith('//') || /[\\?#]/.test(file.path)) {

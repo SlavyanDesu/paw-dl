@@ -1,8 +1,6 @@
 import { mkdir, open, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { z } from 'zod';
-
 import { removeIfExists } from './utils/fs.ts';
 
 const LOCK_NAME = '.paw-dl.lock';
@@ -11,13 +9,28 @@ const LOCK_NAME = '.paw-dl.lock';
 const MAX_ACQUIRE_ATTEMPTS = 10;
 const LOCK_RETRY_DELAY_MS = 50;
 
-const LockDataSchema = z.object({
-  pid: z.number().int().positive(),
-  startedAt: z.string().min(1),
-  target: z.string().min(1),
-});
+type LockData = {
+  pid: number;
+  startedAt: string;
+  target: string;
+};
 
-type LockData = z.infer<typeof LockDataSchema>;
+function isLockData(value: unknown): value is LockData {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  return (
+    Number.isSafeInteger(record['pid']) &&
+    (record['pid'] as number) > 0 &&
+    typeof record['startedAt'] === 'string' &&
+    (record['startedAt'] as string).length > 0 &&
+    typeof record['target'] === 'string' &&
+    (record['target'] as string).length > 0
+  );
+}
 
 function isProcessAlive(pid: number): boolean {
   try {
@@ -44,11 +57,11 @@ async function readLock(lockPath: string): Promise<LockData | null> {
     throw error;
   }
 
-  const result = LockDataSchema.safeParse(tryParseJson(text));
+  const data = tryParseJson(text);
 
   // A corrupt file is usually a half-written lock from a crashed process.
   // Return null so the caller waits, rereads, and only then treats it as stale.
-  return result.success ? result.data : null;
+  return isLockData(data) ? data : null;
 }
 
 function tryParseJson(text: string): unknown {

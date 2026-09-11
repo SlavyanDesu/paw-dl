@@ -1,7 +1,3 @@
-import { AbortError } from 'p-retry';
-
-export const FILE_ORIGIN = 'https://file.pawchive.pw';
-
 export const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
 
 export const NETWORK_ERROR_CODES = new Set([
@@ -12,8 +8,6 @@ export const NETWORK_ERROR_CODES = new Set([
   'ConnectionClosed',
   'ConnectionRefused',
 ]);
-
-export const DEFAULT_CONCURRENCY = 3;
 
 export function parseRetryAfterToTimestamp(value: string | null): number {
   if (!value) {
@@ -29,7 +23,7 @@ export function parseRetryAfterToTimestamp(value: string | null): number {
   }
 
   if (!Number.isSafeInteger(timestamp)) {
-    throw new AbortError('Retry-After value is too large.');
+    throw new RangeError('Retry-After value is too large.');
   }
 
   return timestamp;

@@ -1,8 +1,10 @@
 import pLimit from 'p-limit';
 
-export type Task<T> = () => Promise<T>;
+export const DEFAULT_CONCURRENCY = 3;
 
-export function createQueue(concurrency = 3) {
+type Task<T> = () => Promise<T>;
+
+export function createQueue(concurrency = DEFAULT_CONCURRENCY) {
   if (!Number.isSafeInteger(concurrency) || concurrency < 1) {
     throw new Error('Concurrency must be a number.');
   }

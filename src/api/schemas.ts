@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const IdSchema = z.string().refine((value) => value.trim().length > 0, 'ID must not be empty.');
 
-export const AttachmentSchema = z.object({
+const AttachmentSchema = z.object({
   name: z
     .string()
     .nullish()
@@ -31,15 +31,15 @@ const OptionalAttachmentSchema = AttachmentSchema.extend({
     };
   });
 
-export const CreatorSchema = z.object({
+const CreatorSchema = z.object({
   name: z.string().refine((value) => value.trim().length > 0, 'Creator name must not be empty.'),
 });
 
-export const PostSummarySchema = z.object({
+const PostSummarySchema = z.object({
   id: IdSchema,
 });
 
-export const PostSchema = z.object({
+const PostSchema = z.object({
   id: IdSchema,
   title: z.string(),
   published: z
