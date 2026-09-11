@@ -12,6 +12,8 @@ cd paw-dl
 bun install
 ```
 
+If you are planning to use this downloader on Android through Termux, [follow these steps](#run-on-termux)
+
 ## Usage
 
 Download a post:
@@ -60,7 +62,7 @@ downloads/
     Creator-Post title-002.mp4
 ```
 
-## Run on Termux (Android)
+## Run on Termux
 
 Install Termux from F-Droid or GitHub (Play Store build is outdated). This needs a 64-bit device (`aarch64` or `x86_64`); upstream Bun only ships Android builds for those.
 
