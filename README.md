@@ -14,6 +14,20 @@ bun install
 
 If you are planning to use this downloader on Android through Termux, [follow these steps](#run-on-termux).
 
+## Update
+
+```sh
+cd paw-dl
+git pull
+bun install
+```
+
+If you built the standalone executable, rebuild it after updating:
+
+```sh
+bun run build
+```
+
 ## Usage
 
 Download a post:
