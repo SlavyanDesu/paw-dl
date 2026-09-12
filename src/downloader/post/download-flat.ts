@@ -33,6 +33,7 @@ type DownloadFlatOptions = {
   queue: Queue;
   includeFiles: string[];
   postCount?: number;
+  session?: string;
 };
 
 /*
@@ -40,7 +41,7 @@ type DownloadFlatOptions = {
  * Stems carry date + post ID, so same-title posts never collide.
  */
 export async function downloadFlat(options: DownloadFlatOptions): Promise<FlatDownloadResult> {
-  const { creator, userName, output, queue, includeFiles, postCount } = options;
+  const { creator, userName, output, queue, includeFiles, postCount, session } = options;
 
   const summary: FlatDownloadResult = { posts: 0, saved: 0, skipped: 0, failedPosts: 0, failures: [] };
   const failedPostIds = new Set<string>();
@@ -68,10 +69,10 @@ export async function downloadFlat(options: DownloadFlatOptions): Promise<FlatDo
   const manifest = await readManifest(manifestPath, identity);
 
   try {
-    for await (const postSummary of iterateCreatorPosts(creator, postCount)) {
+    for await (const postSummary of iterateCreatorPosts(creator, postCount, session)) {
       let detail;
       try {
-        detail = await getPost(creator, postSummary.id);
+        detail = await getPost(creator, postSummary.id, session);
       } catch (error) {
         summary.posts++;
         noteFailure(`[Post ${postSummary.id}]`, error, postSummary.id);

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { parseCreator, parsePost, parsePostList } from './schemas.ts';
+import { parseCreator, parseFavoriteCreators, parseFavoritePosts, parsePost, parsePostList } from './schemas.ts';
 
 // Shapes recorded from live API 2026-09-11. IDs kept, bodies trimmed.
 const LIVE_PROFILE = {
@@ -90,4 +90,56 @@ test('empty ids and names reject', () => {
   expect(() => parseCreator({ name: '  ' })).toThrow();
   expect(() => parsePost({ ...LIVE_POST, id: ' ' })).toThrow();
   expect(() => parsePostList([{ id: '' }])).toThrow();
+});
+
+// Shapes recorded from live /account/favorites 2026-09-12. Bodies trimmed.
+const LIVE_FAV_CREATOR = {
+  id: '15210176',
+  name: 'GeulimYKUN',
+  service: 'fanbox',
+  indexed: '2026-06-10T05:00:00',
+  updated: '2026-09-11T18:04:44.770937',
+  public_id: 'geulimykun',
+  relation_id: 1382,
+  ever_imported: true,
+  kemono_favorited: 26429,
+  faved_seq: 22504095,
+  last_imported: '2026-09-11T18:00:00',
+};
+
+const LIVE_FAV_POST = {
+  id: '162300817',
+  user: '32897471',
+  service: 'patreon',
+  title: 'Sparkxie Live Extra',
+  content: '<p></p>',
+  embed: {},
+  shared_file: false,
+  added: '2026-06-28T12:00:00',
+  published: '2026-06-28T12:22:45',
+  edited: '2026-06-28T12:22:45',
+  file: {},
+  attachments: [{ name: '1.jpg', path: '/f0/36/f036cf467e76bc897501a54e13bddf6e129a6c6b0cb11a04806d439e564929e5.jpg' }],
+  poll: null,
+  captions: null,
+  tags: '{NSFW,Nude,Segs,honkaistarrail}',
+  origin: 'import',
+  preview_state: 'scraped',
+  has_full: true,
+  detail_fetched: true,
+  next: '162133542',
+  prev: '162363233',
+  faved_seq: 12580312,
+};
+
+test('live favorite creators and posts parse', () => {
+  expect(parseFavoriteCreators([LIVE_FAV_CREATOR])).toEqual([
+    { service: 'fanbox', userId: '15210176', name: 'GeulimYKUN' },
+  ]);
+
+  const [favorite] = parseFavoritePosts([LIVE_FAV_POST]);
+
+  expect(favorite?.creator).toEqual({ service: 'patreon', userId: '32897471' });
+  expect(favorite?.post.id).toBe('162300817');
+  expect(favorite?.post.attachments.map((file) => file.name)).toEqual(['1.jpg']);
 });

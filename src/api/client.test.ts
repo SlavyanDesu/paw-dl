@@ -1,16 +1,19 @@
 import { expect, spyOn, test } from 'bun:test';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
-import { getCreator, getPost, getPostPage, iterateCreatorPosts } from './client.ts';
+import { getCreator, getFavorites, getPost, getPostPage, iterateCreatorPosts } from './client.ts';
 
 const CREATOR = { service: 'patreon', userId: '123' };
 
-type Route = (url: URL) => { status: number; headers?: Record<string, string>; body: string } | null;
+type Route = (
+  url: URL,
+  headers: Record<string, string | string[] | undefined>,
+) => { status: number; headers?: Record<string, string>; body: string } | null;
 
 async function withApi<T>(route: Route, run: () => Promise<T>): Promise<T> {
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? '/', 'http://api.test');
-    const hit = route(url);
+    const hit = route(url, request.headers);
 
     if (!hit) {
       response.writeHead(404, { 'Content-Type': 'text/plain' });
@@ -132,6 +135,43 @@ test('non-JSON and invalid JSON throw', async () => {
     async () => {
       await expect(getPostPage(CREATOR, 0)).rejects.toThrow('did not send JSON');
       await expect(getPostPage(CREATOR, 50)).rejects.toThrow('invalid JSON');
+    },
+  );
+});
+
+test('favorites send the session cookie and parse both lists', async () => {
+  const seen: (string | string[] | undefined)[] = [];
+
+  await withApi(
+    (url, headers) => {
+      seen.push(headers.cookie);
+
+      if (url.searchParams.get('type') === 'post') {
+        return {
+          status: 200,
+          body: JSON.stringify([
+            { id: '9', user: '123', service: 'patreon', title: 'T', published: null, file: null, attachments: [] },
+          ]),
+        };
+      }
+
+      return { status: 200, body: JSON.stringify([{ id: '123', service: 'patreon', name: 'Live' }]) };
+    },
+    async () => {
+      const favorites = await getFavorites('s3cr3t');
+
+      expect(seen).toEqual(['session=s3cr3t', 'session=s3cr3t']);
+      expect(favorites.posts.map((favorite) => favorite.post.id)).toEqual(['9']);
+      expect(favorites.creators).toEqual([{ service: 'patreon', userId: '123', name: 'Live' }]);
+    },
+  );
+});
+
+test('expired session throws plainly', async () => {
+  await withApi(
+    () => ({ status: 401, body: '{}' }),
+    async () => {
+      await expect(getFavorites('stale')).rejects.toThrow('Session invalid or expired');
     },
   );
 });

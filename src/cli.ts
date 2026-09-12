@@ -2,13 +2,17 @@ import { parseArgs } from 'node:util';
 import { resolve } from 'node:path';
 import { parseTarget, type Target } from './utils/parse-url.ts';
 
+export type FavoritesScope = 'posts' | 'creators' | 'all';
+
 export type CliOptions = {
-  target: Target;
+  target: Target | undefined;
   output: string;
   postCount: number | undefined;
   includeFiles: string[];
   force: boolean;
   flat: boolean;
+  favorites: FavoritesScope | undefined;
+  session: string | undefined;
 };
 
 export const HELP = `Usage: paw-dl [options] <url>
@@ -16,7 +20,7 @@ export const HELP = `Usage: paw-dl [options] <url>
 A Pawchive downloader.
 
 Arguments:
-  url                                Creator or post URL
+  url                                Creator or post URL (omit with --favorites)
 
 Options:
   -o, --output <folder>              Output dir. Default: current working directory.
@@ -24,8 +28,20 @@ Options:
   --include-files <extensions>       Include attachments, separated by commas: zip,psd,pdf or all
   -f, --force                        Bypass the output directory lock. Does not overwrite files or bypass validation.
   --flat                             Download all creator files into one folder, no per-post folders.
+  --favorites <posts|creators|all>  Download favorites. Needs --session or PAWCHIVE_SESSION.
+  --session <cookie>                 Pawchive session cookie for favorites. Falls back to PAWCHIVE_SESSION.
   -h, --help                         Show help.
 `;
+
+function parseFavoritesScope(value: string): FavoritesScope {
+  const scope = value.trim().toLowerCase();
+
+  if (scope === 'posts' || scope === 'creators' || scope === 'all') {
+    return scope;
+  }
+
+  throw new Error('Use --favorites posts, creators, or all.');
+}
 
 function parsePostCount(value: string): number {
   const number = Number(value);
@@ -58,6 +74,8 @@ export function parseCli(args: string[] = Bun.argv.slice(2)): CliOptions | null 
     'include-files'?: string;
     force?: boolean;
     flat?: boolean;
+    favorites?: string;
+    session?: string;
     help?: boolean;
   };
   let positionals: string[];
@@ -73,6 +91,8 @@ export function parseCli(args: string[] = Bun.argv.slice(2)): CliOptions | null 
         'include-files': { type: 'string' },
         force: { type: 'boolean', short: 'f', default: false },
         flat: { type: 'boolean', default: false },
+        favorites: { type: 'string' },
+        session: { type: 'string' },
         help: { type: 'boolean', short: 'h', default: false },
       },
     }));
@@ -80,12 +100,43 @@ export function parseCli(args: string[] = Bun.argv.slice(2)): CliOptions | null 
     throw new Error(error instanceof Error ? error.message : String(error));
   }
 
-  if (values.help || positionals.length === 0) {
+  const scope = values.favorites === undefined ? undefined : parseFavoritesScope(values.favorites);
+
+  if (values.help || (positionals.length === 0 && scope === undefined)) {
     return null;
   }
 
   if (positionals.length > 1) {
     throw new Error('Too many arguments. Expected a single URL.');
+  }
+
+  const session = values.session?.trim() || process.env.PAWCHIVE_SESSION?.trim() || undefined;
+
+  if (scope !== undefined) {
+    if (positionals.length > 0) {
+      throw new Error('Remove the URL when using --favorites.');
+    }
+
+    if (!session) {
+      throw new Error('Favorites need a session. Pass --session or set PAWCHIVE_SESSION.');
+    }
+
+    if (values.flat) {
+      throw new Error('--flat only works on creator URLs.');
+    }
+
+    const output = values.output?.trim() ? resolve(values.output) : process.cwd();
+
+    return {
+      target: undefined,
+      output,
+      postCount: values.post === undefined ? undefined : parsePostCount(values.post),
+      includeFiles: values['include-files'] === undefined ? [] : parseIncludeFiles(values['include-files']),
+      force: values.force ?? false,
+      flat: false,
+      favorites: scope,
+      session,
+    };
   }
 
   const input = positionals[0]!;
@@ -109,5 +160,7 @@ export function parseCli(args: string[] = Bun.argv.slice(2)): CliOptions | null 
     includeFiles: values['include-files'] === undefined ? [] : parseIncludeFiles(values['include-files']),
     force: values.force ?? false,
     flat: values.flat ?? false,
+    favorites: undefined,
+    session,
   };
 }

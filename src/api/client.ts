@@ -1,4 +1,15 @@
-import { parseCreator, parsePost, parsePostList, type Creator, type Post, type PostSummary } from './schemas.ts';
+import {
+  parseCreator,
+  parseFavoriteCreators,
+  parseFavoritePosts,
+  parsePost,
+  parsePostList,
+  type Creator,
+  type FavoriteCreator,
+  type FavoritePost,
+  type Post,
+  type PostSummary,
+} from './schemas.ts';
 
 import { NETWORK_ERROR_CODES, RETRYABLE_STATUS, parseRetryAfterToTimestamp } from '../utils/http.ts';
 import { RetryableError, retryWithBackoff } from '../utils/retry.ts';
@@ -36,11 +47,17 @@ function creatorPath(creator: CreatorRef): string {
   return `/${service}/user/${userId}`;
 }
 
-async function requestJson(path: string, query: Record<string, string> = {}): Promise<unknown> {
+async function requestJson(path: string, query: Record<string, string> = {}, session?: string): Promise<unknown> {
   const url = new URL(`${API_BASE_URL}${path}`);
 
   for (const [key, value] of Object.entries(query)) {
     url.searchParams.set(key, value);
+  }
+
+  const headers: Record<string, string> = { Accept: 'application/json' };
+
+  if (session) {
+    headers.Cookie = `session=${session}`;
   }
 
   return retryWithBackoff(
@@ -49,9 +66,7 @@ async function requestJson(path: string, query: Record<string, string> = {}): Pr
 
       try {
         response = await fetch(url, {
-          headers: {
-            Accept: 'application/json',
-          },
+          headers,
           signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         });
       } catch (error) {
@@ -66,6 +81,11 @@ async function requestJson(path: string, query: Record<string, string> = {}): Pr
         const retryAfter = response.headers.get('retry-after');
 
         await response.body?.cancel();
+
+        // Auth failures never recover on retry; say so plainly.
+        if (session && (response.status === 401 || response.status === 403)) {
+          throw new Error('Session invalid or expired. Log in again and refresh the cookie.');
+        }
 
         if (RETRYABLE_STATUS.has(response.status)) {
           throw new RetryableHttpError(response.status, url.pathname, parseRetryAfterToTimestamp(retryAfter));
@@ -105,14 +125,14 @@ async function requestJson(path: string, query: Record<string, string> = {}): Pr
   );
 }
 
-export async function getCreator(creator: CreatorRef): Promise<Creator> {
-  const data = await requestJson(`${creatorPath(creator)}/profile`);
+export async function getCreator(creator: CreatorRef, session?: string): Promise<Creator> {
+  const data = await requestJson(`${creatorPath(creator)}/profile`, {}, session);
 
   return parseCreator(data);
 }
 
-export async function getPost(creator: CreatorRef, postId: string): Promise<Post> {
-  const data = await requestJson(`${creatorPath(creator)}/post/${encodeURIComponent(postId)}`);
+export async function getPost(creator: CreatorRef, postId: string, session?: string): Promise<Post> {
+  const data = await requestJson(`${creatorPath(creator)}/post/${encodeURIComponent(postId)}`, {}, session);
 
   const post = parsePost(data);
 
@@ -123,21 +143,40 @@ export async function getPost(creator: CreatorRef, postId: string): Promise<Post
   return post;
 }
 
-export async function getPostPage(creator: CreatorRef, offset: number): Promise<PostSummary[]> {
+export async function getPostPage(creator: CreatorRef, offset: number, session?: string): Promise<PostSummary[]> {
   if (!Number.isSafeInteger(offset) || offset < 0) {
     throw new Error('Offset must be a non-negative integer.');
   }
 
-  const data = await requestJson(creatorPath(creator), {
-    o: String(offset),
-  });
+  const data = await requestJson(
+    creatorPath(creator),
+    {
+      o: String(offset),
+    },
+    session,
+  );
 
   return parsePostList(data);
+}
+
+export type Favorites = {
+  posts: FavoritePost[];
+  creators: FavoriteCreator[];
+};
+
+export async function getFavorites(session: string): Promise<Favorites> {
+  const [postsData, creatorsData] = await Promise.all([
+    requestJson('/account/favorites', { type: 'post' }, session),
+    requestJson('/account/favorites', {}, session),
+  ]);
+
+  return { posts: parseFavoritePosts(postsData), creators: parseFavoriteCreators(creatorsData) };
 }
 
 export async function* iterateCreatorPosts(
   creator: CreatorRef,
   postCount?: number,
+  session?: string,
 ): AsyncGenerator<PostSummary, void, unknown> {
   if (postCount !== undefined && (!Number.isSafeInteger(postCount) || postCount < 1)) {
     throw new Error('Invalid post count.');
@@ -149,7 +188,7 @@ export async function* iterateCreatorPosts(
 
   for (let page = 0; ; page++) {
     const offset = page * PAGE_SIZE;
-    const posts = await getPostPage(creator, offset);
+    const posts = await getPostPage(creator, offset, session);
 
     if (posts.length === 0) {
       return;

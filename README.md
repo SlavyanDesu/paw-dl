@@ -48,18 +48,28 @@ Download five latest posts from creator page and include ZIP and PSD attachments
 bun run start "https://pawchive.pw/<service>/user/<userId>" -o ./downloads --post 5 --include-files zip,psd
 ```
 
+Download favorited posts and favorited creators (find the `session` cookie in browser DevTools after logging in):
+
+```sh
+bun run start --favorites all --session <cookie> -o ./downloads
+```
+
+Use `--favorites posts` for favorited posts only, or `--favorites creators` for favorited creators only.
+
 ### Options
 
-| Option                         | Behavior                                                                         |
-| ------------------------------ | -------------------------------------------------------------------------------- |
-| `-o, --output [folder_name]`   | Output dir. Default: current working directory.                                  |
-| `-n, --post <number>`          | Limit the number of posts fetched from a creator. Omit to fetch all posts.       |
-| `--include-files <extensions>` | Include attachments, separated by commas, or use `all`.                          |
-| `-f, --force`                  | Bypass the output directory lock. Does not overwrite files or bypass validation. |
-| `--flat`                       | Creator URLs only: all files into one folder, no per-post folders.               |
-| `-h, --help`                   | Show help.                                                                       |
+| Option                               | Behavior                                                                         |
+| ------------------------------------ | -------------------------------------------------------------------------------- |
+| `-o, --output [folder_name]`         | Output dir. Default: current working directory.                                  |
+| `-n, --post <number>`                | Limit the number of posts fetched from a creator. Omit to fetch all posts.       |
+| `--include-files <extensions>`       | Include attachments, separated by commas, or use `all`.                          |
+| `-f, --force`                        | Bypass the output directory lock. Does not overwrite files or bypass validation. |
+| `--flat`                             | Creator URLs only: all files into one folder, no per-post folders.               |
+| `--favorites <posts\|creators\|all>` | Download favorites without a URL. Needs `--session` or `PAWCHIVE_SESSION`.       |
+| `--session <cookie>`                 | Pawchive session cookie for favorites. Falls back to `PAWCHIVE_SESSION`.         |
+| `-h, --help`                         | Show help.                                                                       |
 
-`--post` and `--flat` only work with creator URLs. Images and videos are included by default.  
+`--flat` only works with creator URLs. `--post` also caps favorites mode. Images and videos are included by default.  
 Use `--include-files all` to include every available attachment type.
 
 Posts are processed one at a time, with up to three files downloading concurrently.
@@ -118,6 +128,13 @@ bun run start "https://pawchive.pw/<service>/user/<userId>" -o ~/storage/downloa
 ```
 
 Shared storage does not support hard links, but paw-dl falls back to a same-directory rename automatically. Lock file and `--force` behave the same as on desktop.
+
+Save the session once so `--session` is not needed every run (`.env` is gitignored):
+
+```sh
+printf 'PAWCHIVE_SESSION=<cookie>\n' > .env
+bun run start --favorites posts -o ./downloads
+```
 
 ## Build an executable
 
