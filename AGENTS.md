@@ -18,7 +18,7 @@ Bun CLI app that downloads posts/files from pawchive.pw (`https://pawchive.pw/{s
 - Keep `.ts` extensions on relative imports. Use `import type` or inline `type` specifiers for type-only imports (`verbatimModuleSyntax` is enabled).
 - User-facing console messages (errors/logs) are in **English**.
 - Commits use conventional-commit style (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`).
-- No `commander`: CLI parsing is `node:util parseArgs` in `src/cli.ts`. Progress bars use `cli-progress` in `src/downloader/progress.ts` (TTY stderr `MultiBar`, `console.warn` fallback off-TTY); keep the `ProgressTracker` interface (`reset`/`meter`/`retry`/`setState`/`close`) stable so downloaders stay untouched. Don't reintroduce `commander`.
+- No `commander`: CLI parsing is `node:util parseArgs` in `src/cli.ts`. Progress bars use `cli-progress` in `src/downloader/progress.ts` (TTY stderr `MultiBar`, `console.warn` fallback off-TTY); keep the `ProgressTracker` class (`reset`/`meter`/`retry`/`setState`/`close`) stable so downloaders stay untouched. Don't reintroduce `commander`.
 
 ## Architecture
 
