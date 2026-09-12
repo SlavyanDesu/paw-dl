@@ -2,7 +2,7 @@ import { parseArgs } from 'node:util';
 import { resolve } from 'node:path';
 import { parseTarget, type Target } from './utils/parse-url.ts';
 
-export type FavoritesScope = 'posts' | 'creators' | 'all';
+export type FavoritesScope = 'posts' | 'creators';
 
 export type CliOptions = {
   target: Target | undefined;
@@ -24,11 +24,11 @@ Arguments:
 
 Options:
   -o, --output <folder>              Output dir. Default: current working directory.
-  -n, --post <number>                Limit the number of posts fetched from a creator. Omit to fetch all posts.
+  -n, --post <number>                Limit posts per creator, or favorited posts in posts scope. Omit for all posts.
   --include-files <extensions>       Include attachments, separated by commas: zip,psd,pdf or all
   -f, --force                        Bypass the output directory lock. Does not overwrite files or bypass validation.
-  --flat                             Download all creator files into one folder, no per-post folders.
-  --favorites <posts|creators|all>  Download favorites. Needs --session or PAWCHIVE_SESSION.
+  --flat                             Flat layout into one folder: creator URLs or --favorites.
+  --favorites <posts|creators>      Download favorites. Needs --session or PAWCHIVE_SESSION.
   --session <cookie>                 Pawchive session cookie for favorites. Falls back to PAWCHIVE_SESSION.
   -h, --help                         Show help.
 `;
@@ -36,11 +36,11 @@ Options:
 function parseFavoritesScope(value: string): FavoritesScope {
   const scope = value.trim().toLowerCase();
 
-  if (scope === 'posts' || scope === 'creators' || scope === 'all') {
+  if (scope === 'posts' || scope === 'creators') {
     return scope;
   }
 
-  throw new Error('Use --favorites posts, creators, or all.');
+  throw new Error('Use --favorites posts or creators.');
 }
 
 function parsePostCount(value: string): number {
@@ -121,10 +121,6 @@ export function parseCli(args: string[] = Bun.argv.slice(2)): CliOptions | null 
       throw new Error('Favorites need a session. Pass --session or set PAWCHIVE_SESSION.');
     }
 
-    if (values.flat) {
-      throw new Error('--flat only works on creator URLs.');
-    }
-
     const output = values.output?.trim() ? resolve(values.output) : process.cwd();
 
     return {
@@ -133,7 +129,7 @@ export function parseCli(args: string[] = Bun.argv.slice(2)): CliOptions | null 
       postCount: values.post === undefined ? undefined : parsePostCount(values.post),
       includeFiles: values['include-files'] === undefined ? [] : parseIncludeFiles(values['include-files']),
       force: values.force ?? false,
-      flat: false,
+      flat: values.flat ?? false,
       favorites: scope,
       session,
     };

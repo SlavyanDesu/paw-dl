@@ -5,6 +5,23 @@ import { getCreator, getFavorites, getPost, getPostPage, iterateCreatorPosts } f
 
 const CREATOR = { service: 'patreon', userId: '123' };
 
+test('favorites only request and validate the selected scope', async () => {
+  for (const scope of ['posts', 'creators'] as const) {
+    let calls = 0;
+    await withApi(
+      (url) => {
+        calls++;
+        const selected = (url.searchParams.get('type') === 'post') === (scope === 'posts');
+        return { status: selected ? 200 : 500, body: selected ? '[]' : 'invalid' };
+      },
+      async () => {
+        expect(await getFavorites('test-session', scope)).toEqual({ posts: [], creators: [] });
+        expect(calls).toBe(1);
+      },
+    );
+  }
+});
+
 type Route = (
   url: URL,
   headers: Record<string, string | string[] | undefined>,

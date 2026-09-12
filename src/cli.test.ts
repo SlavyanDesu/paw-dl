@@ -21,12 +21,20 @@ test('--flat reaches the options and is rejected on post URLs', () => {
 });
 
 test('--favorites takes a scope, needs a session and no URL', () => {
-  expect(() => parseCli(['--favorites', 'all'])).toThrow('need a session');
-  expect(() => parseCli([CREATOR, '--favorites', 'all', '--session', 'abc'])).toThrow('Remove the URL');
-  expect(() => parseCli(['--favorites', 'all', '--flat', '--session', 'abc'])).toThrow(
-    '--flat only works on creator URLs.',
-  );
-  expect(() => parseCli(['--favorites', 'bogus', '--session', 'abc'])).toThrow('posts, creators, or all');
+  const saved = process.env.PAWCHIVE_SESSION;
+
+  delete process.env.PAWCHIVE_SESSION;
+
+  try {
+    expect(() => parseCli(['--favorites', 'posts'])).toThrow('need a session');
+  } finally {
+    if (saved !== undefined) {
+      process.env.PAWCHIVE_SESSION = saved;
+    }
+  }
+  expect(() => parseCli([CREATOR, '--favorites', 'creators', '--session', 'abc'])).toThrow('Remove the URL');
+  expect(() => parseCli(['--favorites', 'bogus', '--session', 'abc'])).toThrow('posts or creators');
+  expect(() => parseCli(['--favorites', 'all', '--session', 'abc'])).toThrow('posts or creators');
   expect(() => parseCli(['--favorites'])).toThrow('argument missing');
 
   expect(parseCli(['--favorites', 'posts', '--session', 'abc', '-n', '5'])).toMatchObject({
@@ -36,18 +44,19 @@ test('--favorites takes a scope, needs a session and no URL', () => {
     postCount: 5,
   });
   expect(parseCli(['--favorites', 'creators', '--session', 'abc'])?.favorites).toBe('creators');
-  expect(parseCli(['--favorites', 'all', '--session', 'abc'])?.favorites).toBe('all');
+  expect(parseCli(['--favorites', 'posts', '--flat', '--session', 'abc'])?.flat).toBe(true);
+  expect(parseCli(['--favorites', 'creators', '--flat', '--session', 'abc'])?.flat).toBe(true);
 });
 
 test('--session falls back to PAWCHIVE_SESSION', () => {
+  const saved = process.env.PAWCHIVE_SESSION;
   process.env.PAWCHIVE_SESSION = 'env-cookie';
 
   try {
     expect(parseCli(['--favorites', 'posts'])?.session).toBe('env-cookie');
     expect(parseCli([CREATOR])?.session).toBe('env-cookie');
   } finally {
-    delete process.env.PAWCHIVE_SESSION;
+    if (saved === undefined) delete process.env.PAWCHIVE_SESSION;
+    else process.env.PAWCHIVE_SESSION = saved;
   }
-
-  expect(parseCli([CREATOR])?.session).toBeUndefined();
 });

@@ -164,10 +164,10 @@ export type Favorites = {
   creators: FavoriteCreator[];
 };
 
-export async function getFavorites(session: string): Promise<Favorites> {
+export async function getFavorites(session: string, scope?: 'posts' | 'creators'): Promise<Favorites> {
   const [postsData, creatorsData] = await Promise.all([
-    requestJson('/account/favorites', { type: 'post' }, session),
-    requestJson('/account/favorites', {}, session),
+    scope === 'creators' ? [] : requestJson('/account/favorites', { type: 'post' }, session),
+    scope === 'posts' ? [] : requestJson('/account/favorites', {}, session),
   ]);
 
   return { posts: parseFavoritePosts(postsData), creators: parseFavoriteCreators(creatorsData) };

@@ -5,6 +5,7 @@ import type { CreatorRef } from './api/client.ts';
 import type { Post } from './api/schemas.ts';
 import { createQueue, DEFAULT_CONCURRENCY } from './downloader/queue.ts';
 import { downloadFlat } from './downloader/post/download-flat.ts';
+import type { FlatPost } from './downloader/post/download-flat.ts';
 import { downloadPost } from './downloader/post/download-post.ts';
 import { acquireLock, releaseLock } from './lock.ts';
 import { errorMessage } from './utils/http.ts';
@@ -186,7 +187,7 @@ async function downloadAll(options: DownloadAllOptions): Promise<{ totals: Total
     totals.failedFiles = result.failures.length;
     totals.failedPosts = result.failedPosts;
 
-    return { totals, listingFailed: false };
+    return { totals, listingFailed: result.listingFailed };
   }
 
   if (postCount !== undefined) {
@@ -215,12 +216,13 @@ type DownloadFavoritesOptions = {
   output: string;
   postCount: number | undefined;
   includeFiles: string[];
+  flat: boolean;
 };
 
 async function downloadFavorites(
   options: DownloadFavoritesOptions,
 ): Promise<{ totals: Totals; listingFailed: boolean }> {
-  const { scope, session, output, postCount, includeFiles } = options;
+  const { scope, session, output, postCount, includeFiles, flat } = options;
 
   const totals: Totals = { posts: 0, saved: 0, skipped: 0, failedFiles: 0, failedPosts: 0 };
   const queue = createQueue(DEFAULT_CONCURRENCY);
@@ -242,10 +244,10 @@ async function downloadFavorites(
   }
 
   let listingFailed = false;
-  let favorites;
+  let favorites: Awaited<ReturnType<typeof getFavorites>>;
 
   try {
-    favorites = await getFavorites(session);
+    favorites = await getFavorites(session, scope);
   } catch (error) {
     console.error(`[Favorites] ${errorMessage(error)}`);
 
@@ -253,6 +255,64 @@ async function downloadFavorites(
   }
 
   const posts = postCount === undefined ? favorites.posts : favorites.posts.slice(0, postCount);
+
+  // Yield posts as they arrive, so flat downloads do not buffer entire creators.
+  if (flat) {
+    async function* entries(): AsyncGenerator<FlatPost> {
+      if (scope === 'posts') {
+        for (const favorite of posts) {
+          try {
+            yield {
+              creator: favorite.creator,
+              userName: await creatorName(favorite.creator),
+              post: favorite.post,
+            };
+          } catch (error) {
+            totals.posts++;
+            totals.failedPosts++;
+
+            console.error(`[Post ${favorite.post.id}] ${errorMessage(error)}`);
+          }
+        }
+      } else {
+        for (const creator of favorites.creators) {
+          const ref: CreatorRef = { service: creator.service, userId: creator.userId };
+
+          try {
+            for await (const summary of iterateCreatorPosts(ref, postCount, session)) {
+              try {
+                yield { creator: ref, userName: creator.name, post: await getPost(ref, summary.id, session) };
+              } catch (error) {
+                totals.posts++;
+                totals.failedPosts++;
+
+                console.error(`[Post ${summary.id}] ${errorMessage(error)}`);
+              }
+            }
+          } catch (error) {
+            listingFailed = true;
+
+            console.error(`[Creator ${creator.name}] ${errorMessage(error)}`);
+          }
+        }
+      }
+    }
+    const result = await downloadFlat({
+      output,
+      queue,
+      includeFiles,
+      posts: entries(),
+      identity: JSON.stringify(['favorites', scope]),
+    });
+
+    totals.posts += result.posts;
+    totals.saved = result.saved;
+    totals.skipped = result.skipped;
+    totals.failedFiles = result.failures.length;
+    totals.failedPosts += result.failedPosts;
+
+    return { totals, listingFailed: listingFailed || result.listingFailed };
+  }
 
   if (scope !== 'creators') {
     if (postCount !== undefined) {
@@ -330,6 +390,7 @@ async function main(): Promise<void> {
         output,
         postCount,
         includeFiles,
+        flat,
       });
 
       printSummary(totals, listingFailed);
