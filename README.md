@@ -1,12 +1,10 @@
 # paw-dl
 
-A CLI tool for [Bun](https://bun.com) that downloads posts from [Pawchive](https://pawchive.pw) by creator, post, or from your favorites.
-
-It supports resumable downloads, per-creator and per-scope post limits, additional attachment types, a flat single-folder layout, and your `session` cookie for favorites (no password login).
+A CLI downloader for [Pawchive](https://pawchive.pw).
 
 ## Setup
 
-Requires [Bun](https://bun.com) (not Node).
+Requires [Bun](https://bun.com).
 
 ```sh
 git clone https://github.com/SlavyanDesu/paw-dl
@@ -23,35 +21,29 @@ git pull
 bun install
 ```
 
-If you built the standalone executable, rebuild it so the new version ships:
-
-```sh
-bun run build
-```
-
 ## Usage
 
 The URL shape is `https://pawchive.pw/{service}/user/{userId}[/post/{postId}]`.
 
-Download a single post:
+- Download a single post:
 
 ```sh
 bun run start "https://pawchive.pw/{service}/user/{userId}/post/{postId}" -o ./downloads
 ```
 
-Download all posts from a creator:
+- Download all posts from a creator:
 
 ```sh
 bun run start "https://pawchive.pw/{service}/user/{userId}" -o ./downloads
 ```
 
-Download the five latest posts from a creator, including ZIP and PSD attachments:
+- Download the five latest posts from a creator, including ZIP and PSD attachments:
 
 ```sh
 bun run start "https://pawchive.pw/{service}/user/{userId}" -o ./downloads --post 5 --include-files zip,psd
 ```
 
-Download everything into one folder instead of per-post folders:
+- Download everything into one folder instead of per-post folders:
 
 ```sh
 bun run start "https://pawchive.pw/{service}/user/{userId}" -o ./downloads --flat
@@ -59,37 +51,28 @@ bun run start "https://pawchive.pw/{service}/user/{userId}" -o ./downloads --fla
 
 ### Favorites
 
-Individual posts and favorited creators each need a session cookie — see [Authentication](#authentication).
+To use `--favorites` option, you need a `session` cookie — see [Authentication](#authentication).
 
-Download your favorited posts (each one individually):
+- Download your favorited posts:
 
 ```sh
 bun run start --favorites posts -o ./downloads
 ```
 
-Download all posts from your favorited creators:
+- Download all posts from your favorited creators:
 
 ```sh
 bun run start --favorites creators -o ./downloads
 ```
-
-Flat layout works with both favorites scopes:
-
-```sh
-bun run start --favorites posts -o ./downloads --flat
-bun run start --favorites creators -o ./downloads --flat
-```
-
-`--favorites` takes no URL. `--post` caps favorited posts in posts mode, or caps each favorited creator in creators mode. `--post` and `--flat` only apply to creator URLs and favorites — never to single-post URLs.
 
 ## Authentication
 
 Favorites require a `session` cookie. Find it in logged-in browser DevTools:
 
 1. Log in at `https://pawchive.pw` and open DevTools → **Application** → **Cookies**.
-2. Copy the value of the `session` cookie (this is your `session`).
+2. Copy the value of the `session` cookie.
 
-On Android, DevTools is not available in mobile browsers. Install **Kiwi Browser** (Chromium fork that supports desktop Chrome extensions), log in, install **EditThisCookie** from the Chrome Web Store, and copy the `session` value from there. Without Kiwi, connect the phone to desktop Chrome via USB debugging and read the cookie under `chrome://inspect` → **Application** → **Cookies**.
+On Android, DevTools is not available in mobile browsers. Install **Kiwi Browser** (a Chromium fork that supports desktop Chrome extensions), log in, install **EditThisCookie** from the Chrome Web Store, and copy the `session` value from there. Or just copy it from your desktop and send it to your phone.
 
 Pass it per run:
 
@@ -97,14 +80,14 @@ Pass it per run:
 bun run start --favorites posts --session <cookie> -o ./downloads
 ```
 
-To avoid passing it every time, save it once to `.env` in the repo root (`.env` is gitignored and Bun loads it automatically). `--session` on the command line overrides it:
+To avoid passing it every time, save it once to `.env` in the repo root. `--session` on the command line will override it:
 
 ```sh
 printf 'PAWCHIVE_SESSION=<cookie>\n' > .env
 bun run start --favorites posts -o ./downloads
 ```
 
-If `.env` already has unrelated entries, append the line instead of overwriting them. When the cookie expires you get:
+If `.env` already has unrelated entries, append the line instead of overwriting them. When the cookie expires, you get:
 
 ```
 Session invalid or expired. Log in again and refresh the cookie.
@@ -119,13 +102,13 @@ Replace the cookie and rerun.
 | `-o, --output <folder>`         | Output dir. Default: current working directory.                                 |
 | `-n, --post <number>`           | Limit posts per creator, or favorited posts in posts scope. Omit for all posts. |
 | `--include-files <extensions>`  | Include attachments: comma-separated extensions (`zip,psd,pdf`) or `all`.       |
-| `-f, --force`                   | Bypass the output directory lock. Never overwrites files or skips validation.   |
-| `--flat`                        | Flat layout into one folder: creator URLs or `--favorites`.                     |
+| `-f, --force`                   | Bypass the output directory lock.                                               |
+| `--flat`                        | Flat layout into one folder.                                                    |
 | `--favorites <posts\|creators>` | Download favorites without a URL. Needs `--session` or `PAWCHIVE_SESSION`.      |
 | `--session <cookie>`            | Pawchive session cookie for favorites. Falls back to `PAWCHIVE_SESSION`.        |
 | `-h, --help`                    | Show help.                                                                      |
 
-Images and videos are always included. `--include-files all` adds every remaining attachment type; deferred attachments are always skipped.
+Images and videos are always included. `--include-files all` adds every remaining attachment type.
 
 ## Output
 
@@ -182,7 +165,7 @@ shutdown summary -> exit status (1 on failure/listing interruption) -> release l
 
 Post details are always fetched separately; creator listings page in batches of 50, and favorite posts arrive as full post objects so no refetch is needed. Flat mode processes one post at a time and updates the manifest between posts, so interrupting a run keeps every completed file — nothing is buffered in memory, and never-planned posts are simply refetched next run.
 
-Resumption relies on a matching source and a strong ETag, and is capped at 10 GiB per file. Finalization hard-links the temporary file to the final name without overwriting; where hard links are unavailable (Android/Termux, shared storage) it uses an exclusive copy that still refuses to overwrite.
+Resumption relies on a matching source and a strong ETag, and is capped at 10 GiB per file. Finalization hard-links the temporary file to the final name without overwriting; where hard links are unavailable (Android/Termux, shared storage), it uses an exclusive copy that still refuses to overwrite.
 
 ## Run on Termux
 
@@ -254,15 +237,6 @@ src/
     post/                   per-post planning: directory, manifest, naming, jobs
     file/                   per-file transfer: resume, response matrix, stream, finalize
 ```
-
-## Build an executable
-
-```sh
-bun run build
-./paw-dl --help
-```
-
-This compiles a standalone `paw-dl` binary for your platform with Bun embedded. It accepts the same arguments as the source command.
 
 ## License
 
