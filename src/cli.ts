@@ -25,10 +25,10 @@ Arguments:
 Options:
   -o, --output <folder>              Output dir. Default: current working directory.
   -n, --post <number>                Limit posts per creator, or favorited posts in posts scope. Omit for all posts.
-  --include-files <extensions>       Include attachments, separated by commas: zip,psd,pdf or all
-  -f, --force                        Bypass the output directory lock. Does not overwrite files or bypass validation.
-  --flat                             Flat layout into one folder: creator URLs or --favorites.
-  --favorites <posts|creators>      Download favorites. Needs --session or PAWCHIVE_SESSION.
+  --include-files <extensions>       Include attachments: comma-separated extensions (zip,psd,pdf) or all.
+  -f, --force                        Bypass the output directory lock.
+  --flat                             Flat layout into one folder.
+  --favorites <posts|creators>       Download favorites without a URL. Needs --session or PAWCHIVE_SESSION.
   --session <cookie>                 Pawchive session cookie for favorites. Falls back to PAWCHIVE_SESSION.
   -h, --help                         Show help.
 `;
