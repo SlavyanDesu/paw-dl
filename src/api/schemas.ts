@@ -63,6 +63,33 @@ export type Creator = z.infer<typeof CreatorSchema>;
 export type Post = z.infer<typeof PostSchema>;
 export type PostSummary = z.infer<typeof PostSummarySchema>;
 
+// GET /account/favorites returns bare creator entries.
+const FavoriteCreatorSchema = z.object({
+  id: IdSchema,
+  service: z.string().min(1),
+  name: z.string(),
+});
+
+export type FavoriteRef = {
+  service: string;
+  userId: string;
+};
+
+export type FavoriteCreator = FavoriteRef & {
+  name: string;
+};
+
+// GET /account/favorites?type=post returns full post objects plus owner fields.
+const FavoritePostSchema = PostSchema.extend({
+  user: IdSchema,
+  service: z.string().min(1),
+});
+
+export type FavoritePost = {
+  creator: FavoriteRef;
+  post: Post;
+};
+
 export function parseCreator(value: unknown): Creator {
   return CreatorSchema.parse(value);
 }
@@ -73,4 +100,18 @@ export function parsePost(value: unknown): Post {
 
 export function parsePostList(value: unknown): PostSummary[] {
   return PostListResponseSchema.parse(value);
+}
+
+export function parseFavoriteCreators(value: unknown): FavoriteCreator[] {
+  return z
+    .array(FavoriteCreatorSchema)
+    .parse(value)
+    .map((item) => ({ service: item.service, userId: item.id, name: item.name }));
+}
+
+export function parseFavoritePosts(value: unknown): FavoritePost[] {
+  return z
+    .array(FavoritePostSchema)
+    .parse(value)
+    .map(({ user, service, ...post }) => ({ creator: { service, userId: user }, post }));
 }

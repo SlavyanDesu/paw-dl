@@ -81,10 +81,9 @@ export function createJobs(
   directory: string,
   fileStem: string,
   manifest: PostManifest,
+  occupiedNames = new Set<string>(),
 ): { jobs: DownloadJob[]; jobFailures: { destination: string; error: unknown }[] } {
   const existingBySource = new Map<string, FileManifestEntry>();
-
-  const occupiedNames = new Set<string>();
 
   for (const [sourceKey, entry] of Object.entries(manifest.files)) {
     // Key and source must be consistent.
@@ -100,6 +99,7 @@ export function createJobs(
   let nextOrder = 1;
   const jobs: DownloadJob[] = [];
   const jobFailures: { destination: string; error: unknown }[] = [];
+  const seenSources = new Set<string>();
 
   for (const file of files) {
     let source: string;
@@ -115,6 +115,8 @@ export function createJobs(
 
       continue;
     }
+    if (seenSources.has(source)) continue;
+    seenSources.add(source);
     const existing = existingBySource.get(source);
 
     // Keep the old filename when rerunning with a different filter.
